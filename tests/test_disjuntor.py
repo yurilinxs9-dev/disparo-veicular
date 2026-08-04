@@ -62,3 +62,47 @@ def test_listar_devolve_mais_recente_primeiro(conn):
     registrar(conn, "sistema", "primeiro", datetime(2026, 8, 4, 9, 0))
     registrar(conn, "sistema", "segundo", datetime(2026, 8, 4, 10, 0))
     assert listar(conn)[0]["texto"] == "segundo"
+
+
+def test_opt_outs_disparam_abaixo_do_minimo(conn):
+    _semear(conn, contatados=5, responderam=3, opt_outs=3)
+    v = avaliar(conn)
+    assert v.ok is False
+    assert "opt-out" in v.motivo
+
+
+def test_poucos_opt_outs_abaixo_do_minimo_nao_dispara(conn):
+    _semear(conn, contatados=5, responderam=2, opt_outs=2)
+    assert avaliar(conn).ok is True
+
+
+def test_opt_outs_disparam_com_dezenove_contatos(conn):
+    _semear(conn, contatados=19, responderam=3, opt_outs=3)
+    v = avaliar(conn)
+    assert v.ok is False
+    assert "opt-out" in v.motivo
+
+
+def test_janela_usa_contatado_em_nao_id(conn):
+    # Leads "novos" (contatado_em maior, sem opt-out) sao inseridos primeiro,
+    # entao ficam com id MENOR. Leads "antigos" (contatado_em menor, com
+    # opt-out) sao inseridos depois, entao ficam com id MAIOR. Se a consulta
+    # ordenasse por id DESC em vez de contatado_em DESC, os opt-outs antigos
+    # apareceriam na amostra de tamanho 5 e dispararia o disjuntor.
+    for i in range(5):
+        conn.execute(
+            "INSERT INTO leads (nome, telefone_e164, veiculo, status, criado_em, "
+            "contatado_em) VALUES (?, ?, '', 'contatado', ?, ?)",
+            (f"N{i}", f"55118{i:08d}", AGORA.isoformat(),
+             datetime(2026, 8, 4, 12, 0).isoformat()),
+        )
+    for i in range(5):
+        conn.execute(
+            "INSERT INTO leads (nome, telefone_e164, veiculo, status, criado_em, "
+            "contatado_em) VALUES (?, ?, '', 'opt_out', ?, ?)",
+            (f"O{i}", f"55117{i:08d}", AGORA.isoformat(),
+             datetime(2026, 8, 1, 12, 0).isoformat()),
+        )
+    conn.commit()
+    v = avaliar(conn, amostra=5)
+    assert v.ok is True

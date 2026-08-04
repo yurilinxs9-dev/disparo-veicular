@@ -24,18 +24,19 @@ class Veredito:
 def avaliar(conn: sqlite3.Connection, amostra: int = 50) -> Veredito:
     linhas = conn.execute(
         "SELECT status FROM leads WHERE contatado_em IS NOT NULL "
-        "ORDER BY id DESC LIMIT ?",
+        "ORDER BY contatado_em DESC LIMIT ?",
         (amostra,),
     ).fetchall()
-    if len(linhas) < MINIMO_PARA_AVALIAR:
-        return Veredito(True)
 
     status = [linha["status"] for linha in linhas]
-    responderam = sum(1 for s in status if s in _RESPONDERAM)
     opt_outs = sum(1 for s in status if s == "opt_out")
-
     if opt_outs >= TETO_OPT_OUT:
         return Veredito(False, f"{opt_outs} opt-out nos últimos {len(status)} disparos")
+
+    if len(status) < MINIMO_PARA_AVALIAR:
+        return Veredito(True)
+
+    responderam = sum(1 for s in status if s in _RESPONDERAM)
     taxa = responderam / len(status)
     if taxa < PISO_RESPOSTA:
         return Veredito(
