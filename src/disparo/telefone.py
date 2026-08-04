@@ -15,7 +15,7 @@ def normalizar(bruto: str | None) -> str | None:
     if not bruto:
         return None
     digitos = _SO_DIGITOS.sub("", str(bruto))
-    if digitos.startswith("55"):
+    if len(digitos) in (12, 13) and digitos.startswith("55"):
         digitos = digitos[2:]
     if len(digitos) not in (10, 11):
         return None
