@@ -556,6 +556,7 @@ def test_bloqueado_nao_entra(conn):
 
 
 def test_reimportar_o_mesmo_arquivo_nao_duplica(conn):
+    bloquear(conn, "5511966662222", "opt_out", AGORA)
     importar_csv(conn, CSV, AGORA)
     rel = importar_csv(conn, CSV, AGORA)
     assert rel.importados == 0
