@@ -4,8 +4,20 @@ from __future__ import annotations
 import httpx
 
 
-class EvolutionIndisponivel(RuntimeError):
-    """A Evolution API não respondeu, ou respondeu com erro de servidor."""
+class EvolutionErro(RuntimeError):
+    """Falha ao falar com a Evolution API."""
+
+
+class EvolutionIndisponivel(EvolutionErro):
+    """Transitorio: erro de transporte ou 5xx. Vale tentar de novo."""
+
+
+class EvolutionRecusou(EvolutionErro):
+    """Permanente: 4xx. Chave, instancia ou requisicao errada — precisa de gente."""
+
+    def __init__(self, status: int, detalhe: str) -> None:
+        super().__init__(f"{status}: {detalhe}")
+        self.status = status
 
 
 class Evolution:
@@ -26,6 +38,8 @@ class Evolution:
             raise EvolutionIndisponivel(
                 f"{resposta.status_code} em {caminho}: {resposta.text[:200]}"
             )
+        if resposta.status_code >= 400:
+            raise EvolutionRecusou(resposta.status_code, resposta.text[:200])
         resposta.raise_for_status()
         return resposta
 
