@@ -357,12 +357,18 @@ from disparo.telefone import normalizar
     ("+55 11 98888-4444", "5511988884444"),
     ("5511988884444", "5511988884444"),
     ("11 3333-4444", "551133334444"),
+    # DDD 55 (Caxias do Sul / Serra Gaúcha) não pode ser confundido com o DDI 55
+    ("5532211234", "555532211234"),
+    ("55988887766", "5555988887766"),
+    ("555532211234", "555532211234"),
+    ("5555988887766", "5555988887766"),
 ])
 def test_normaliza_formatos_validos(bruto, esperado):
     assert normalizar(bruto) == esperado
 
 
-@pytest.mark.parametrize("bruto", ["", "123", "abcdef", "5511", "1" * 20, None])
+@pytest.mark.parametrize("bruto", ["", "123", "abcdef", "5511", "1" * 20,
+                                   "05987654321", None])
 def test_rejeita_invalidos(bruto):
     assert normalizar(bruto) is None
 ```
@@ -392,7 +398,10 @@ def normalizar(bruto: str | None) -> str | None:
     if not bruto:
         return None
     digitos = _SO_DIGITOS.sub("", str(bruto))
-    if digitos.startswith("55"):
+    # O "55" inicial só é DDI quando o total tem 12 ou 13 dígitos
+    # (DDI + DDD + assinante). Com 10 ou 11 dígitos ele é o DDD 55,
+    # de Caxias do Sul e da Serra Gaúcha, e precisa ser preservado.
+    if digitos.startswith("55") and len(digitos) in (12, 13):
         digitos = digitos[2:]
     if len(digitos) not in (10, 11):
         return None
