@@ -22,13 +22,13 @@ def dentro(agora: datetime, j: Janela = PADRAO) -> bool:
 
 
 def proxima_abertura(agora: datetime, j: Janela = PADRAO) -> datetime:
-    candidato = agora
-    if candidato.time() > j.inicio or candidato.weekday() not in j.dias:
-        if candidato.time() >= j.inicio:
-            candidato = candidato + timedelta(days=1)
-    candidato = candidato.replace(
+    if dentro(agora, j):
+        return agora
+    candidato = agora.replace(
         hour=j.inicio.hour, minute=j.inicio.minute, second=0, microsecond=0
     )
+    if candidato <= agora:
+        candidato += timedelta(days=1)
     while candidato.weekday() not in j.dias:
         candidato += timedelta(days=1)
     return candidato

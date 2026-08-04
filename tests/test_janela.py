@@ -33,3 +33,19 @@ def test_proxima_abertura_no_mesmo_dia():
 def test_proxima_abertura_pula_o_fim_de_semana():
     # sexta 19h -> segunda 9h
     assert proxima_abertura(datetime(2026, 8, 7, 19, 0)) == datetime(2026, 8, 10, 9, 0)
+
+
+def test_proxima_abertura_no_meio_da_janela_retorna_o_proprio_instante():
+    assert proxima_abertura(datetime(2026, 8, 4, 10, 0)) == datetime(2026, 8, 4, 10, 0)
+
+
+def test_proxima_abertura_exatamente_na_abertura_retorna_o_proprio_instante():
+    assert proxima_abertura(datetime(2026, 8, 4, 9, 0)) == datetime(2026, 8, 4, 9, 0)
+
+
+def test_proxima_abertura_depois_do_fechamento_no_mesmo_dia():
+    assert proxima_abertura(datetime(2026, 8, 4, 18, 30)) == datetime(2026, 8, 5, 9, 0)
+
+
+def test_proxima_abertura_domingo_a_noite():
+    assert proxima_abertura(datetime(2026, 8, 9, 23, 0)) == datetime(2026, 8, 10, 9, 0)
