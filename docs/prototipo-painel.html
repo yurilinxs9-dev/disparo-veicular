@@ -1,0 +1,845 @@
+<title>Painel de operação — disparo e qualificação</title>
+
+<style>
+  :root {
+    --bg: #F2F3F5;
+    --surface: #FFFFFF;
+    --surface-2: #E9EBEF;
+    --ink: #14181F;
+    --ink-2: #5A6472;
+    --ink-3: #8A93A2;
+    --line: #D5D9E0;
+    --accent: #123FA8;
+    --accent-ink: #FFFFFF;
+    --accent-soft: rgba(18, 63, 168, .10);
+    --ok: #12795C;
+    --ok-soft: rgba(18, 121, 92, .12);
+    --warn: #8F6206;
+    --warn-soft: rgba(143, 98, 6, .14);
+    --crit: #A82A2A;
+    --crit-soft: rgba(168, 42, 42, .12);
+    --shadow: 0 1px 2px rgba(20, 24, 31, .06), 0 8px 24px rgba(20, 24, 31, .05);
+
+    --f-display: "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --f-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E1116;
+      --surface: #161A21;
+      --surface-2: #1E232C;
+      --ink: #E7EAF0;
+      --ink-2: #97A0B0;
+      --ink-3: #6C7788;
+      --line: #2A303B;
+      --accent: #6E9BFF;
+      --accent-ink: #0E1116;
+      --accent-soft: rgba(110, 155, 255, .14);
+      --ok: #3FBF92;
+      --ok-soft: rgba(63, 191, 146, .14);
+      --warn: #E0A93A;
+      --warn-soft: rgba(224, 169, 58, .14);
+      --crit: #F0716B;
+      --crit-soft: rgba(240, 113, 107, .14);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .28);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0E1116;
+    --surface: #161A21;
+    --surface-2: #1E232C;
+    --ink: #E7EAF0;
+    --ink-2: #97A0B0;
+    --ink-3: #6C7788;
+    --line: #2A303B;
+    --accent: #6E9BFF;
+    --accent-ink: #0E1116;
+    --accent-soft: rgba(110, 155, 255, .14);
+    --ok: #3FBF92;
+    --ok-soft: rgba(63, 191, 146, .14);
+    --warn: #E0A93A;
+    --warn-soft: rgba(224, 169, 58, .14);
+    --crit: #F0716B;
+    --crit-soft: rgba(240, 113, 107, .14);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .28);
+  }
+
+  :root[data-theme="light"] {
+    --bg: #F2F3F5;
+    --surface: #FFFFFF;
+    --surface-2: #E9EBEF;
+    --ink: #14181F;
+    --ink-2: #5A6472;
+    --ink-3: #8A93A2;
+    --line: #D5D9E0;
+    --accent: #123FA8;
+    --accent-ink: #FFFFFF;
+    --accent-soft: rgba(18, 63, 168, .10);
+    --ok: #12795C;
+    --ok-soft: rgba(18, 121, 92, .12);
+    --warn: #8F6206;
+    --warn-soft: rgba(143, 98, 6, .14);
+    --crit: #A82A2A;
+    --crit-soft: rgba(168, 42, 42, .12);
+    --shadow: 0 1px 2px rgba(20, 24, 31, .06), 0 8px 24px rgba(20, 24, 31, .05);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 20px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .eyebrow {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  .mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------- topbar ---------- */
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+
+  .brand-name {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .16em;
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .brand-sub { color: var(--ink-3); font-size: 13px; }
+
+  .chip-id {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    letter-spacing: .06em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: var(--ink-2);
+  }
+
+  .status-lamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: 13px;
+    padding: 5px 12px 5px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+
+  .status-lamp[data-state="ativo"] { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+  .status-lamp[data-state="pausado"] { background: var(--crit-soft); color: var(--crit); border-color: var(--crit); }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .status-lamp[data-state="ativo"] .dot { animation: pulse 2.4s ease-in-out infinite; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+  .clock { font-family: var(--f-mono); font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    padding: 7px 14px;
+    transition: background .15s ease, border-color .15s ease;
+  }
+
+  button:hover { background: var(--surface-2); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .btn-kill {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    border-color: var(--crit);
+    color: var(--crit);
+  }
+
+  .btn-kill:hover { background: var(--crit-soft); }
+
+  /* ---------- notice ---------- */
+
+  .notice {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    background: var(--warn-soft);
+    border: 1px solid var(--warn);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    color: var(--ink);
+  }
+
+  .notice strong { color: var(--warn); font-family: var(--f-display); text-transform: uppercase; letter-spacing: .1em; }
+
+  /* ---------- instruments ---------- */
+
+  .instruments {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+  }
+
+  .gauge { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+  .gauge-value {
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: -.02em;
+  }
+
+  .gauge-value small { font-size: 16px; color: var(--ink-3); letter-spacing: 0; }
+
+  .gauge-note { font-size: 12.5px; color: var(--ink-2); }
+
+  .bar { height: 7px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .5s ease; }
+
+  .breaker-rows { display: flex; flex-direction: column; gap: 5px; }
+
+  .breaker-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+
+  .breaker-row b { font-family: var(--f-mono); font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 500; }
+
+  .lamp-ok { color: var(--ok); }
+  .lamp-warn { color: var(--warn); }
+  .lamp-crit { color: var(--crit); }
+
+  .spark { width: 100%; height: 44px; display: block; }
+
+  /* ---------- main columns ---------- */
+
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panel-title {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .13em;
+    font-size: 13px;
+    margin-right: auto;
+  }
+
+  .count-pill {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+
+  .table-scroll { overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+
+  th {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    text-align: left;
+    font-weight: 400;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  td { padding: 11px 16px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
+
+  tbody tr { cursor: pointer; transition: background .12s ease; }
+  tbody tr:hover { background: var(--accent-soft); }
+  tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  tbody tr[aria-selected="true"] { background: var(--accent-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .lead-name { font-weight: 600; }
+
+  .phone {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    display: inline-block;
+    margin-top: 3px;
+  }
+
+  .veiculo { color: var(--ink-2); font-size: 13.5px; }
+  .resumo { color: var(--ink-2); font-size: 13px; max-width: 34ch; }
+  .quando { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .pill[data-s="quente"] { background: var(--crit-soft); color: var(--crit); border-color: var(--crit); }
+  .pill[data-s="em_conversa"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .pill[data-s="contatado"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
+  .pill[data-s="frio"] { background: var(--surface-2); color: var(--ink-3); border-color: var(--line); }
+  .pill[data-s="opt_out"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+  .pill[data-s="sem_resposta"] { background: transparent; color: var(--ink-3); border-color: var(--line); }
+
+  /* ---------- side panel ---------- */
+
+  .tabs { display: flex; gap: 4px; }
+
+  .tab {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .11em;
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-2);
+  }
+
+  .tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+  .feed { padding: 6px 0 10px; max-height: 620px; overflow-y: auto; }
+
+  .feed-item {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 10px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+    border-left: 2px solid transparent;
+  }
+
+  .feed-item.is-new { animation: slide-in .4s ease; }
+  @keyframes slide-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  .feed-item[data-kind="envio"] { border-left-color: var(--accent); }
+  .feed-item[data-kind="resposta"] { border-left-color: var(--ok); }
+  .feed-item[data-kind="quente"] { border-left-color: var(--crit); }
+  .feed-item[data-kind="alerta"] { border-left-color: var(--warn); }
+  .feed-item[data-kind="sistema"] { border-left-color: var(--line); }
+
+  .feed-time { font-family: var(--f-mono); font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .feed-text b { font-weight: 600; }
+  .feed-text span { color: var(--ink-2); }
+
+  .thread { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
+
+  .bubble {
+    max-width: 82%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .bubble small { display: block; margin-top: 4px; font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); }
+
+  .bubble[data-from="bot"] { align-self: flex-end; background: var(--accent-soft); border: 1px solid var(--line); border-bottom-right-radius: 3px; }
+  .bubble[data-from="lead"] { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 3px; }
+
+  .verdict {
+    margin: 0 16px 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .verdict-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+
+  .field { display: flex; flex-direction: column; gap: 1px; }
+  .field .k { font-family: var(--f-display); text-transform: uppercase; letter-spacing: .1em; font-size: 10.5px; color: var(--ink-3); }
+  .field .v { font-family: var(--f-mono); font-size: 13px; }
+
+  .empty { padding: 40px 16px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    justify-content: space-between;
+    color: var(--ink-3);
+    font-size: 12.5px;
+    padding-top: 4px;
+    border-top: 1px solid var(--line);
+  }
+
+  @media (max-width: 1060px) {
+    .instruments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .columns { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  @media (max-width: 560px) {
+    .instruments { grid-template-columns: minmax(0, 1fr); }
+    .wrap { padding: 0 12px 40px; }
+    .topbar { padding: 10px 12px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Disparo &amp; Qualificação</span>
+    <span class="brand-sub">proteção veicular</span>
+  </div>
+  <span class="chip-id">CHIP 11 9****-4820</span>
+  <span class="status-lamp" data-state="ativo" id="lamp"><span class="dot"></span><span id="lampText">Ativo</span></span>
+  <span class="clock" id="clock">—</span>
+  <button class="btn-kill" id="killBtn">Pausar tudo</button>
+</header>
+
+<div class="wrap">
+
+  <p class="notice">
+    <strong>Protótipo</strong>
+    <span>Tela de demonstração com dados fictícios. Nada aqui está ligado ao WhatsApp nem à API do Claude.</span>
+  </p>
+
+  <section class="instruments">
+
+    <article class="card gauge">
+      <span class="eyebrow">Cota de hoje</span>
+      <span class="gauge-value" id="cotaValor">14<small> / 30</small></span>
+      <div class="bar"><span id="cotaBar" style="width:46.6%"></span></div>
+      <span class="gauge-note">Dia 8 da rampa — volume cheio liberado</span>
+    </article>
+
+    <article class="card gauge">
+      <span class="eyebrow">Próximo disparo</span>
+      <span class="gauge-value" id="countdown">04:12</span>
+      <div class="bar"><span id="countdownBar" style="width:32%"></span></div>
+      <span class="gauge-note">Janela 09:00–18:00 · seg a sex · intervalo 2–8 min</span>
+    </article>
+
+    <article class="card gauge">
+      <span class="eyebrow">Disjuntor</span>
+      <span class="gauge-value lamp-ok" id="breakerState">OK</span>
+      <div class="breaker-rows">
+        <span class="breaker-row">Resposta nos últimos 50 <b class="lamp-ok">24%</b></span>
+        <span class="breaker-row">Opt-outs nos últimos 50 <b>1 / 3</b></span>
+        <span class="breaker-row">Falhas de envio <b>0</b></span>
+      </div>
+    </article>
+
+    <article class="card gauge">
+      <span class="eyebrow">Taxa de resposta · 14 dias</span>
+      <span class="gauge-value">24<small>%</small></span>
+      <svg class="spark" viewBox="0 0 220 44" preserveAspectRatio="none" aria-label="Taxa de resposta subiu de 12% para 24% em 14 dias" role="img">
+        <defs>
+          <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity=".28" />
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1="0" y1="22" x2="220" y2="22" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4" />
+        <path d="M0,36 L17,33 L34,35 L51,30 L68,31 L85,26 L102,27 L119,22 L136,24 L153,18 L170,17 L187,14 L204,13 L220,9 L220,44 L0,44 Z" fill="url(#sparkFill)" />
+        <polyline points="0,36 17,33 34,35 51,30 68,31 85,26 102,27 119,22 136,24 153,18 170,17 187,14 204,13 220,9"
+                  fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
+        <circle cx="219" cy="9" r="3.2" fill="var(--accent)" />
+      </svg>
+    </article>
+
+  </section>
+
+  <section class="columns">
+
+    <article class="card">
+      <div class="panel-head">
+        <span class="panel-title">Leads</span>
+        <span class="count-pill" id="leadCount">312 na base · 14 hoje</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Lead</th>
+              <th scope="col">Veículo</th>
+              <th scope="col">Status</th>
+              <th scope="col">Resumo</th>
+              <th scope="col">Último contato</th>
+            </tr>
+          </thead>
+          <tbody id="leadRows"></tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="panel-head">
+        <span class="panel-title" id="sideTitle">Ao vivo</span>
+        <div class="tabs" role="tablist" aria-label="Painel lateral">
+          <button class="tab" role="tab" id="tabFeed" aria-selected="true" aria-controls="paneFeed">Ao vivo</button>
+          <button class="tab" role="tab" id="tabThread" aria-selected="false" aria-controls="paneThread">Conversa</button>
+        </div>
+      </div>
+
+      <div class="feed" id="paneFeed" role="tabpanel" aria-labelledby="tabFeed"></div>
+
+      <div id="paneThread" role="tabpanel" aria-labelledby="tabThread" hidden>
+        <div class="thread" id="thread"></div>
+        <div class="verdict" id="verdict"></div>
+      </div>
+    </article>
+
+  </section>
+
+  <footer>
+    <span>Evolution API · instância <span class="mono">protege-01</span> · conectada há <span class="mono">6d 04h</span></span>
+    <span>Qualificação por <span class="mono">claude-haiku-4-5</span> · custo do mês: <span class="mono">US$ 6,41</span></span>
+  </footer>
+
+</div>
+
+<script>
+  const leads = [
+    {
+      nome: "Marcelo Tavares", fone: "11 98812-4407", veiculo: "Onix 1.0 · 2019",
+      status: "quente", statusLabel: "Quente", quando: "14:02",
+      resumo: "Paga R$ 320/mês e achou caro. Quer cotação.",
+      thread: [
+        { de: "bot", t: "14:41 ontem", txt: "Oi, Marcelo, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem um Onix 2019 — hoje ele tá protegido por seguro ou proteção veicular?" },
+        { de: "lead", t: "18:20 ontem", txt: "tenho seguro sim mas tá saindo caro" },
+        { de: "bot", t: "18:21 ontem", txt: "Entendo. Posso perguntar quanto tá saindo por mês hoje?" },
+        { de: "lead", t: "13:58", txt: "320 por mês, e ainda tem franquia alta" },
+        { de: "bot", t: "13:59", txt: "É bem acima da média pra esse perfil. O carro é quitado ou financiado?" },
+        { de: "lead", t: "14:01", txt: "quitado. queria ver se sai mais em conta" },
+        { de: "bot", t: "14:02", txt: "Perfeito. Vou passar pro Rafael, que monta a cotação e te chama por aqui ainda hoje." }
+      ],
+      verdict: { decisao: "quente", cobertura: "Sim", paga: "R$ 320,00", turnos: "4", resumo: "Paga R$ 320/mês em seguro, achou caro, franquia alta. Carro quitado. Pediu cotação." }
+    },
+    {
+      nome: "Juliana Prado", fone: "11 99430-1182", veiculo: "HB20 1.6 · 2021",
+      status: "em_conversa", statusLabel: "Em conversa", quando: "13:47",
+      resumo: "Sem cobertura hoje. Perguntou o que cobre.",
+      thread: [
+        { de: "bot", t: "11:15", txt: "Oi, Juliana, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem um HB20 2021 — hoje ele tá protegido por seguro ou proteção veicular?" },
+        { de: "lead", t: "13:44", txt: "não tenho nada não" },
+        { de: "bot", t: "13:45", txt: "Nesse caso vale conhecer. Só pra eu te passar o valor certo: o carro é quitado ou financiado?" },
+        { de: "lead", t: "13:47", txt: "financiado. mas o que cobre exatamente?" }
+      ],
+      verdict: { decisao: "continuar", cobertura: "Não", paga: "—", turnos: "3", resumo: "Sem cobertura, carro financiado. Perguntou escopo da cobertura." }
+    },
+    {
+      nome: "Anderson Lima", fone: "11 97765-3390", veiculo: "Strada · 2017",
+      status: "quente", statusLabel: "Quente", quando: "11:38",
+      resumo: "Seguro recusado por uso em app. Quer proposta.",
+      thread: [
+        { de: "bot", t: "10:02", txt: "Oi, Anderson, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem uma Strada 2017 — hoje ela tá protegida por seguro ou proteção veicular?" },
+        { de: "lead", t: "11:30", txt: "tentei fazer seguro mas recusaram, uso pra app" },
+        { de: "bot", t: "11:31", txt: "Isso é comum com seguradora. Proteção veicular costuma aceitar. Quer que eu te mande uma proposta?" },
+        { de: "lead", t: "11:38", txt: "manda sim" }
+      ],
+      verdict: { decisao: "quente", cobertura: "Não", paga: "—", turnos: "2", resumo: "Seguro recusado por uso em aplicativo. Pediu proposta." }
+    },
+    {
+      nome: "Patrícia Nogueira", fone: "11 99120-7745", veiculo: "Corolla · 2020",
+      status: "frio", statusLabel: "Frio", quando: "10:55",
+      resumo: "Renovou seguro mês passado, satisfeita.",
+      thread: [
+        { de: "bot", t: "09:40", txt: "Oi, Patrícia, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem um Corolla 2020 — hoje ele tá protegido por seguro ou proteção veicular?" },
+        { de: "lead", t: "10:54", txt: "tenho seguro, renovei mês passado e tô satisfeita" },
+        { de: "bot", t: "10:55", txt: "Que bom. Se mudar de ideia na próxima renovação, é só me chamar. Boa semana!" }
+      ],
+      verdict: { decisao: "frio", cobertura: "Sim", paga: "—", turnos: "1", resumo: "Renovou seguro recentemente e está satisfeita." }
+    },
+    {
+      nome: "Cleiton Rocha", fone: "11 98003-6621", veiculo: "Gol 1.0 · 2015",
+      status: "opt_out", statusLabel: "Opt-out", quando: "10:12",
+      resumo: "Pediu para não receber mais. Na blocklist.",
+      thread: [
+        { de: "bot", t: "10:08", txt: "Oi, Cleiton, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem um Gol 2015 — hoje ele tá protegido por seguro ou proteção veicular?" },
+        { de: "lead", t: "10:11", txt: "não quero receber mensagem, para de mandar" },
+        { de: "bot", t: "10:12", txt: "Sem problema, Cleiton. Já removi seu número da nossa lista e você não recebe mais nada nossa parte. Desculpa o incômodo." }
+      ],
+      verdict: { decisao: "opt_out", cobertura: "—", paga: "—", turnos: "1", resumo: "Recusa explícita. Número em blocklist permanente." }
+    },
+    {
+      nome: "Fernanda Dias", fone: "11 97441-0098", veiculo: "Renegade · 2022",
+      status: "contatado", statusLabel: "Contatado", quando: "09:51",
+      resumo: "Mensagem entregue e lida. Sem resposta ainda.",
+      thread: [
+        { de: "bot", t: "09:51", txt: "Oi, Fernanda, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem um Renegade 2022 — hoje ele tá protegido por seguro ou proteção veicular?" }
+      ],
+      verdict: { decisao: "aguardando", cobertura: "—", paga: "—", turnos: "0", resumo: "Aguardando resposta. Expira em 72h sem retorno." }
+    },
+    {
+      nome: "Roberto Meireles", fone: "11 96622-8134", veiculo: "Sandero · 2018",
+      status: "sem_resposta", statusLabel: "Sem resposta", quando: "3d atrás",
+      resumo: "Sem retorno em 72h. Encerrado sem insistência.",
+      thread: [
+        { de: "bot", t: "3d atrás", txt: "Oi, Roberto, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem um Sandero 2018 — hoje ele tá protegido por seguro ou proteção veicular?" }
+      ],
+      verdict: { decisao: "sem_resposta", cobertura: "—", paga: "—", turnos: "0", resumo: "Nenhuma resposta em 72h. Nenhum follow-up será enviado." }
+    },
+    {
+      nome: "Simone Barreto", fone: "11 99887-2210", veiculo: "Kwid · 2020",
+      status: "em_conversa", statusLabel: "Em conversa", quando: "09:12",
+      resumo: "Paga R$ 180/mês. Avaliando se compensa trocar.",
+      thread: [
+        { de: "bot", t: "09:05", txt: "Oi, Simone, tudo bem? Aqui é o Rafael da Protege Já. Vi que você tem um Kwid 2020 — hoje ele tá protegido por seguro ou proteção veicular?" },
+        { de: "lead", t: "09:10", txt: "tenho proteção já, pago 180" },
+        { de: "bot", t: "09:12", txt: "Valor tá na média. O que te faria considerar trocar — preço, cobertura ou atendimento?" }
+      ],
+      verdict: { decisao: "continuar", cobertura: "Sim", paga: "R$ 180,00", turnos: "2", resumo: "Já tem proteção a R$ 180/mês. Sondando motivo de troca." }
+    }
+  ];
+
+  const feedSeed = [
+    { t: "14:02", kind: "quente", html: "<b>Marcelo Tavares</b> marcado como <b>quente</b> — <span>aviso enviado ao vendedor</span>" },
+    { t: "13:47", kind: "resposta", html: "<b>Juliana Prado</b> respondeu — <span>“o que cobre exatamente?”</span>" },
+    { t: "13:31", kind: "envio", html: "Disparo <b>14/30</b> para <b>Fernanda Dias</b> — <span>Renegade 2022</span>" },
+    { t: "13:24", kind: "sistema", html: "Número <b>11 96555-0021</b> não existe no WhatsApp — <span>marcado inválido, cota preservada</span>" },
+    { t: "11:38", kind: "quente", html: "<b>Anderson Lima</b> marcado como <b>quente</b> — <span>seguro recusado por uso em app</span>" },
+    { t: "10:12", kind: "alerta", html: "<b>Cleiton Rocha</b> pediu opt-out — <span>número na blocklist permanente</span>" },
+    { t: "09:00", kind: "sistema", html: "Janela aberta — <span>cota do dia liberada: 30</span>" }
+  ];
+
+  const rowsEl = document.getElementById("leadRows");
+  const feedEl = document.getElementById("paneFeed");
+  const threadEl = document.getElementById("thread");
+  const verdictEl = document.getElementById("verdict");
+  const tabFeed = document.getElementById("tabFeed");
+  const tabThread = document.getElementById("tabThread");
+  const paneFeed = document.getElementById("paneFeed");
+  const paneThread = document.getElementById("paneThread");
+  const sideTitle = document.getElementById("sideTitle");
+
+  leads.forEach((lead, i) => {
+    const tr = document.createElement("tr");
+    tr.tabIndex = 0;
+    tr.setAttribute("role", "button");
+    tr.setAttribute("aria-selected", "false");
+    tr.innerHTML =
+      '<td><span class="lead-name">' + lead.nome + '</span><br><span class="phone">' + lead.fone + '</span></td>' +
+      '<td class="veiculo">' + lead.veiculo + '</td>' +
+      '<td><span class="pill" data-s="' + lead.status + '">' + lead.statusLabel + '</span></td>' +
+      '<td class="resumo">' + lead.resumo + '</td>' +
+      '<td class="quando">' + lead.quando + '</td>';
+    tr.addEventListener("click", () => selectLead(i));
+    tr.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectLead(i); }
+    });
+    rowsEl.appendChild(tr);
+  });
+
+  function renderFeed() {
+    feedEl.innerHTML = "";
+    feedSeed.forEach((ev) => feedEl.appendChild(feedNode(ev)));
+  }
+
+  function feedNode(ev) {
+    const el = document.createElement("div");
+    el.className = "feed-item";
+    el.dataset.kind = ev.kind;
+    el.innerHTML = '<span class="feed-time">' + ev.t + '</span><span class="feed-text">' + ev.html + '</span>';
+    return el;
+  }
+
+  function selectLead(i) {
+    const lead = leads[i];
+    Array.from(rowsEl.children).forEach((r, n) => r.setAttribute("aria-selected", String(n === i)));
+
+    threadEl.innerHTML = "";
+    lead.thread.forEach((m) => {
+      const b = document.createElement("div");
+      b.className = "bubble";
+      b.dataset.from = m.de;
+      b.innerHTML = m.txt + '<small>' + (m.de === "bot" ? "robô" : lead.nome.split(" ")[0]) + ' · ' + m.t + '</small>';
+      threadEl.appendChild(b);
+    });
+
+    const v = lead.verdict;
+    verdictEl.innerHTML =
+      '<span class="eyebrow">Leitura do qualificador</span>' +
+      '<div class="verdict-grid">' +
+      field("Decisão", v.decisao) + field("Turnos do robô", v.turnos) +
+      field("Tem cobertura", v.cobertura) + field("Paga hoje", v.paga) +
+      '</div>' +
+      '<div class="field"><span class="k">Resumo para o vendedor</span><span class="v">' + v.resumo + '</span></div>';
+
+    showTab("thread");
+    sideTitle.textContent = lead.nome;
+  }
+
+  function field(k, v) {
+    return '<span class="field"><span class="k">' + k + '</span><span class="v">' + v + '</span></span>';
+  }
+
+  function showTab(which) {
+    const isThread = which === "thread";
+    tabThread.setAttribute("aria-selected", String(isThread));
+    tabFeed.setAttribute("aria-selected", String(!isThread));
+    paneThread.hidden = !isThread;
+    paneFeed.hidden = isThread;
+    sideTitle.textContent = isThread ? sideTitle.textContent : "Ao vivo";
+  }
+
+  tabFeed.addEventListener("click", () => { sideTitle.textContent = "Ao vivo"; showTab("feed"); });
+  tabThread.addEventListener("click", () => {
+    if (!threadEl.children.length) {
+      threadEl.innerHTML = '<p class="empty">Escolha um lead na tabela para ver a conversa.</p>';
+      verdictEl.innerHTML = "";
+    }
+    showTab("thread");
+  });
+
+  renderFeed();
+  threadEl.innerHTML = '<p class="empty">Escolha um lead na tabela para ver a conversa.</p>';
+
+  /* ---------- relógio e contagem ---------- */
+
+  const clockEl = document.getElementById("clock");
+  const cdEl = document.getElementById("countdown");
+  const cdBar = document.getElementById("countdownBar");
+  const cotaValor = document.getElementById("cotaValor");
+  const cotaBar = document.getElementById("cotaBar");
+  const killBtn = document.getElementById("killBtn");
+  const lamp = document.getElementById("lamp");
+  const lampText = document.getElementById("lampText");
+
+  let restante = 252;
+  let cota = 14;
+  let pausado = false;
+
+  const pad = (n) => String(n).padStart(2, "0");
+
+  function tick() {
+    const agora = new Date();
+    clockEl.textContent = pad(agora.getHours()) + ":" + pad(agora.getMinutes()) + ":" + pad(agora.getSeconds());
+
+    if (pausado) return;
+
+    restante -= 1;
+    if (restante <= 0) {
+      restante = 120 + Math.floor(Math.random() * 360);
+      if (cota < 30) {
+        cota += 1;
+        cotaValor.innerHTML = cota + '<small> / 30</small>';
+        cotaBar.style.width = ((cota / 30) * 100).toFixed(1) + "%";
+        pushEvent({
+          t: clockEl.textContent.slice(0, 5),
+          kind: "envio",
+          html: "Disparo <b>" + cota + "/30</b> enviado — <span>aguardando entrega</span>"
+        });
+      }
+    }
+    cdEl.textContent = pad(Math.floor(restante / 60)) + ":" + pad(restante % 60);
+    cdBar.style.width = (100 - (restante / 480) * 100).toFixed(1) + "%";
+  }
+
+  function pushEvent(ev) {
+    const node = feedNode(ev);
+    node.classList.add("is-new");
+    feedEl.prepend(node);
+    while (feedEl.children.length > 24) feedEl.removeChild(feedEl.lastChild);
+  }
+
+  killBtn.addEventListener("click", () => {
+    pausado = !pausado;
+    lamp.dataset.state = pausado ? "pausado" : "ativo";
+    lampText.textContent = pausado ? "Pausado" : "Ativo";
+    killBtn.textContent = pausado ? "Retomar" : "Pausar tudo";
+    pushEvent({
+      t: clockEl.textContent.slice(0, 5),
+      kind: pausado ? "alerta" : "sistema",
+      html: pausado
+        ? "<b>Operação pausada</b> — <span>nenhum disparo até destravamento manual</span>"
+        : "<b>Operação retomada</b> — <span>fila de disparo religada</span>"
+    });
+  });
+
+  tick();
+  setInterval(tick, 1000);
+</script>
