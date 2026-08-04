@@ -29,7 +29,13 @@ def duracao_digitando(texto: str, rng: random.Random) -> float:
 
 
 def quebrar(texto: str, limite: int = 160) -> list[str]:
-    """Divide uma resposta longa em mensagens curtas, cortando entre frases."""
+    """Divide uma resposta longa em mensagens curtas, cortando entre frases.
+
+    Uma frase que sozinha já ultrapasse o limite (por exemplo, um trecho
+    sem pontuação de fim) é dividida por palavra; uma palavra isolada que
+    ainda assim ultrapasse o limite é fatiada por tamanho, como último
+    recurso, para garantir que nenhuma parte devolvida exceda `limite`.
+    """
     texto = texto.strip()
     if len(texto) <= limite:
         return [texto]
@@ -39,10 +45,46 @@ def quebrar(texto: str, limite: int = 160) -> list[str]:
     for frase in _FIM_DE_FRASE.split(texto):
         candidato = f"{atual} {frase}".strip() if atual else frase
         if atual and len(candidato) > limite:
-            partes.append(atual)
+            partes.extend(_encurtar(atual, limite))
             atual = frase
+        else:
+            atual = candidato
+    if atual:
+        partes.extend(_encurtar(atual, limite))
+    return partes
+
+
+def _encurtar(fragmento: str, limite: int) -> list[str]:
+    """Devolve `fragmento` como uma única parte se couber no limite;
+    caso contrário, divide por palavra."""
+    if len(fragmento) <= limite:
+        return [fragmento]
+    return _dividir_por_palavras(fragmento, limite)
+
+
+def _dividir_por_palavras(fragmento: str, limite: int) -> list[str]:
+    """Divide um fragmento (sem quebra de frase) em palavras, agrupando até
+    o limite. Uma palavra isolada que ainda ultrapasse o limite é fatiada
+    por tamanho, pois não há como reduzi-la mantendo a palavra inteira."""
+    partes: list[str] = []
+    atual = ""
+    for palavra in fragmento.split():
+        candidato = f"{atual} {palavra}".strip() if atual else palavra
+        if atual and len(candidato) > limite:
+            partes.append(atual)
+            atual = ""
+            candidato = palavra
+        if len(candidato) > limite:
+            partes.extend(_dividir_por_tamanho(candidato, limite))
+            atual = ""
         else:
             atual = candidato
     if atual:
         partes.append(atual)
     return partes
+
+
+def _dividir_por_tamanho(fragmento: str, limite: int) -> list[str]:
+    """Último recurso: fatia uma palavra maior que o limite em pedaços de
+    até `limite` caracteres, sem perder nem duplicar nenhum caractere."""
+    return [fragmento[i : i + limite] for i in range(0, len(fragmento), limite)]

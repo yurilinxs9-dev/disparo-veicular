@@ -27,10 +27,44 @@ def test_texto_curto_nao_quebra():
 
 
 def test_texto_longo_quebra_em_frases():
+    limite = 120
     texto = ("Perguntei porque eu trabalho na Porto Sul, de proteção veicular. "
              "A gente dá pretinho e cheirinho de graça de 6 em 6 meses pra quem "
              "é associado. Mas o principal é a proteção em si.")
-    partes = quebrar(texto, limite=120)
+    partes = quebrar(texto, limite=limite)
     assert len(partes) >= 2
-    assert all(len(p) <= 160 for p in partes)
+    assert all(len(p) <= limite for p in partes)
+    assert "".join(partes).replace(" ", "") == texto.replace(" ", "")
+
+
+def test_texto_sem_pontuacao_quebra_em_pedacos_dentro_do_limite():
+    limite = 160
+    texto = "x" * 300
+    partes = quebrar(texto, limite=limite)
+    assert len(partes) > 1
+    assert all(len(p) <= limite for p in partes)
+
+
+def test_frase_longa_sem_pontuacao_de_fim_respeita_o_limite():
+    limite = 50
+    texto = " ".join(["palavra"] * 30)  # sem . ! ? em lugar nenhum
+    partes = quebrar(texto, limite=limite)
+    assert len(partes) > 1
+    assert all(len(p) <= limite for p in partes)
+
+
+def test_frase_longa_sem_pontuacao_reconstroi_o_texto_original():
+    limite = 50
+    texto = " ".join(["palavra"] * 30)
+    partes = quebrar(texto, limite=limite)
+    assert "".join(partes).replace(" ", "") == texto.replace(" ", "")
+
+
+def test_palavra_isolada_maior_que_o_limite_fica_sozinha_e_nada_se_perde():
+    limite = 20
+    texto = "oi " + ("abcdefghijklmnopqrstuvwxyz" * 3) + " tudo bem"
+    partes = quebrar(texto, limite=limite)
+    # a palavra gigante não gruda no "oi" nem no "tudo bem" vizinhos
+    assert "oi" in partes
+    assert "tudo bem" in partes
     assert "".join(partes).replace(" ", "") == texto.replace(" ", "")
