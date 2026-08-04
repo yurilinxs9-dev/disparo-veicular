@@ -1,0 +1,113 @@
+# src/disparo/conversador.py
+from __future__ import annotations
+
+import random
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+MODELO = "claude-haiku-4-5"
+TETO_TURNOS = 12
+
+ABERTURAS = ("Oii {nome}, tudo bem?", "Oi {nome}, tudo bem?", "Bom dia {nome}, tudo bem?")
+
+PROMPT = """\
+Você conversa por WhatsApp em nome da Porto Sul, empresa de proteção veicular.
+O objetivo é descobrir se a pessoa tem interesse em uma cotação, e passar para a
+vendedora quando tiver. Você não vende, não fecha e não calcula preço.
+
+# Como a conversa anda
+Etapa 1 — confirmar o veículo: "Vi aqui que você tem um {veiculo}, certo?"
+  - Se confirmar, vá para a etapa 2.
+  - Se confirmar e perguntar o motivo, PULE a etapa 2 e vá direto para a etapa 3.
+  - Se disser que não é o carro dele, se desculpe e encerre com decisao=dado_desatualizado.
+Etapa 2 — quebra-gelo: "Você passa pretinho no pneu?"
+Etapa 3 — identificação: diga que trabalha na Porto Sul, de proteção veicular, e que
+  a empresa dá pretinho e cheirinho de graça de 6 em 6 meses para quem é associado.
+  Comece a frase acompanhando o tom dele: "Haha boa." se ele foi descontraído,
+  "Boa." se foi seco, "Tranquilo." se disse que não passa pretinho.
+Etapa 4 — oferta: diga que o principal não é o pretinho e sim a proteção, que costuma
+  sair bem abaixo de seguro, e pergunte se o carro está protegido por alguma coisa hoje.
+  Conforme a resposta, pergunte quanto ele paga por mês e se o carro é quitado ou financiado.
+Etapa 5 — fechamento: ofereça montar a cotação, sem compromisso.
+
+# Como escrever
+Português neutro e educado, como uma pessoa escrevendo no WhatsApp. Voz feminina —
+use concordância no feminino e "obrigada". Frases curtas, no máximo duas linhas.
+Pode usar "tranquilo", "boa", "haha", "perfeito". Não use gíria pesada ("salve",
+"suave", "firmeza", "mano", "top") nem linguagem formal ("prezado", "venho por meio
+desta"). Sem emoji nas duas primeiras mensagens; depois no máximo um, e só se ele usar
+primeiro. Sem caixa alta e sem exclamação dupla. Espelhe o registro do lead.
+
+# Proibições
+- Nunca invente preço, valor de mensalidade ou desconto. Quem calcula é a vendedora.
+- Nunca prometa cobertura nem afirme o que está incluso.
+- Só comente que o valor que ele paga é alto se for realmente alto. Se for um valor
+  normal, responda de forma neutra e siga.
+- Se ele perguntar se você é um robô, um bot ou se a mensagem é automática, responda a
+  verdade: a primeira abordagem é automatizada e a vendedora assume em seguida. Nunca negue.
+- Nunca insista depois de uma recusa.
+
+# Classificação
+decisao=quente quando ele aceita a cotação, pergunta preço, demonstra achar caro o que
+paga, não tem cobertura e demonstra interesse, ou teve seguro recusado.
+decisao=frio quando responde sem interesse ou já está satisfeito com o que tem.
+decisao=opt_out em qualquer pedido para parar de receber mensagem.
+decisao=dado_desatualizado quando o veículo não é dele.
+decisao=continuar no resto.
+
+O campo resposta é exatamente o texto que será enviado ao lead. Se a decisão for
+quente, a resposta deve avisar que a cotação será montada e enviada.
+"""
+
+
+class Qualificacao(BaseModel):
+    resposta: str = Field(description="Texto a enviar ao lead")
+    decisao: Literal["continuar", "quente", "frio", "opt_out", "dado_desatualizado"]
+    resumo: str = Field(description="Uma linha para a vendedora")
+    paga_hoje: str | None = Field(default=None, description="Valor mensal atual")
+    tem_cobertura: Literal["sim", "nao", "nao_informado"] = "nao_informado"
+    carro_quitado: Literal["quitado", "financiado", "nao_informado"] = "nao_informado"
+
+
+def abertura(nome: str, rng: random.Random) -> str:
+    return rng.choice(ABERTURAS).format(nome=nome)
+
+
+def _conteudo(mensagem: dict) -> list[dict[str, Any]]:
+    blocos: list[dict[str, Any]] = []
+    if mensagem.get("imagem_b64"):
+        blocos.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": mensagem.get("media_type", "image/jpeg"),
+                "data": mensagem["imagem_b64"],
+            },
+        })
+    blocos.append({"type": "text", "text": mensagem.get("texto", "")})
+    return blocos
+
+
+def conversar(cliente: Any, lead: dict, historico: list[dict]) -> Qualificacao:
+    """Uma chamada ao Haiku com o histórico completo daquela conversa."""
+    sistema = PROMPT.replace("{veiculo}", lead.get("veiculo") or "seu carro")
+    mensagens = [
+        {
+            "role": "assistant" if m["direcao"] == "saida" else "user",
+            "content": _conteudo(m),
+        }
+        for m in historico
+    ]
+    resposta = cliente.messages.parse(
+        model=MODELO,
+        max_tokens=512,
+        system=[{
+            "type": "text",
+            "text": sistema,
+            "cache_control": {"type": "ephemeral"},
+        }],
+        messages=mensagens,
+        output_format=Qualificacao,
+    )
+    return resposta.parsed_output
