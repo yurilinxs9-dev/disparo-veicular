@@ -1371,7 +1371,7 @@ git commit -m "feat: atrasos e quebra de mensagem para comportamento humano"
 
 **Interfaces:**
 - Consumes: nada do projeto; usa `httpx`.
-- Produces: `evolution.Evolution` com `numero_existe(telefone: str) -> bool`, `enviar_texto(telefone: str, texto: str) -> str` (devolve `wa_message_id`), `marcar_lida(telefone: str, wa_message_id: str) -> None`, `digitando(telefone: str, segundos: float) -> None`, e a exceção `evolution.EvolutionIndisponivel`.
+- Produces: `evolution.Evolution` com `numero_existe(telefone: str) -> bool`, `enviar_texto(telefone: str, texto: str) -> str` (devolve `wa_message_id`), `marcar_lida(telefone: str, wa_message_id: str) -> None`, `digitando(telefone: str, segundos: float) -> None`, e a hierarquia de exceções `evolution.EvolutionErro` (base), `evolution.EvolutionIndisponivel` (transporte e 5xx — transitório, vale repetir) e `evolution.EvolutionRecusou` (4xx — permanente, exige intervenção; carrega `.status`).
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -1447,8 +1447,20 @@ from __future__ import annotations
 import httpx
 
 
-class EvolutionIndisponivel(RuntimeError):
-    """A Evolution API não respondeu, ou respondeu com erro de servidor."""
+class EvolutionErro(RuntimeError):
+    """Falha ao falar com a Evolution API."""
+
+
+class EvolutionIndisponivel(EvolutionErro):
+    """Transitório: erro de transporte ou 5xx. Vale tentar de novo."""
+
+
+class EvolutionRecusou(EvolutionErro):
+    """Permanente: 4xx. Chave, instância ou requisição errada — precisa de gente."""
+
+    def __init__(self, status: int, detalhe: str) -> None:
+        super().__init__(f"{status}: {detalhe}")
+        self.status = status
 
 
 class Evolution:
@@ -1469,7 +1481,8 @@ class Evolution:
             raise EvolutionIndisponivel(
                 f"{resposta.status_code} em {caminho}: {resposta.text[:200]}"
             )
-        resposta.raise_for_status()
+        if resposta.status_code >= 400:
+            raise EvolutionRecusou(resposta.status_code, resposta.text[:200])
         return resposta
 
     def numero_existe(self, telefone: str) -> bool:
@@ -2050,7 +2063,7 @@ from datetime import datetime
 
 from disparo import cota, disjuntor, eventos, janela
 from disparo.conversador import abertura
-from disparo.evolution import EvolutionIndisponivel
+from disparo.evolution import EvolutionErro
 from disparo.maquina import Status, transicionar
 
 
@@ -2100,7 +2113,7 @@ def tentar_disparar(conn: sqlite3.Connection, evo, agora: datetime,
 
         texto = abertura(lead["nome"].split()[0], rng)
         wa_id = evo.enviar_texto(lead["telefone_e164"], texto)
-    except EvolutionIndisponivel as erro:
+    except EvolutionErro as erro:
         eventos.registrar(conn, "alerta", f"Falha ao enviar: {erro}", agora, lead["id"])
         return Resultado(False, "evolution indisponivel")
 
