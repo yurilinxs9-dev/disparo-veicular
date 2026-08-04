@@ -68,3 +68,34 @@ def test_transcricao_que_falha_nao_derruba():
     m = normalizar(payload, quebrado)
     assert m.tipo == "audio"
     assert "não consegui ouvir" in m.texto
+
+
+def test_transcricao_com_sucesso_nao_sinaliza_falha():
+    payload = _envelope({"audioMessage": {"mimetype": "audio/ogg"},
+                         "base64": base64.b64encode(b"bytes").decode()})
+    m = normalizar(payload, lambda b: "passo sim toda semana")
+    assert m.transcricao_falhou is False
+
+
+def test_transcritor_que_quebra_sinaliza_falha():
+    def quebrado(_: bytes) -> str:
+        raise RuntimeError("whisper caiu")
+
+    payload = _envelope({"audioMessage": {"mimetype": "audio/ogg"},
+                         "base64": base64.b64encode(b"x").decode()})
+    m = normalizar(payload, quebrado)
+    assert m.transcricao_falhou is True
+    assert m.tipo == "audio"
+    assert "não consegui ouvir" in m.texto
+
+
+def test_base64_malformado_sinaliza_falha_sem_propagar():
+    payload = _envelope({"audioMessage": {"mimetype": "audio/ogg"},
+                         "base64": "não é base64!!"})
+    m = normalizar(payload, lambda b: "não deveria chegar aqui")
+    assert m.transcricao_falhou is True
+
+
+def test_mensagem_de_texto_nao_sinaliza_falha():
+    m = normalizar(_envelope({"conversation": "tudo bem e vc"}), lambda b: "")
+    assert m.transcricao_falhou is False

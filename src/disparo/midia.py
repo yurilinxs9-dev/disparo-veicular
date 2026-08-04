@@ -14,6 +14,7 @@ class MensagemNormalizada:
     wa_message_id: str
     imagem_b64: str | None = None
     media_type: str | None = None
+    transcricao_falhou: bool = False
 
 
 def _telefone(jid: str) -> str:
@@ -40,6 +41,7 @@ def normalizar(payload: dict,
         return MensagemNormalizada("texto", texto, **comum)
 
     if "audioMessage" in msg:
+        falhou = False
         try:
             bruto = base64.b64decode(msg.get("base64", ""))
             texto = transcritor(bruto).strip()
@@ -47,7 +49,8 @@ def normalizar(payload: dict,
             texto = ""
         if not texto:
             texto = "[áudio que não consegui ouvir]"
-        return MensagemNormalizada("audio", texto, **comum)
+            falhou = True
+        return MensagemNormalizada("audio", texto, transcricao_falhou=falhou, **comum)
 
     if "imageMessage" in msg:
         return MensagemNormalizada(
