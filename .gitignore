@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Dados e segredos
+.env
+dados/
+backups/
+*.db
+*.db-wal
+*.db-shm
+
+# Workspace de execução por subagentes (rascunho, não é histórico)
+.superpowers/
+
+# Worktrees criados na sessão
+.claude/worktrees/
