@@ -9,6 +9,10 @@ class Status(StrEnum):
     NOVO = "novo"
     CONTATADO = "contatado"
     EM_CONVERSA = "em_conversa"
+    NEGOCIANDO = "negociando"
+    AGUARDANDO_PAGAMENTO = "aguardando_pagamento"
+    PAGO = "pago"
+    ESCALADO = "escalado"
     QUENTE = "quente"
     FRIO = "frio"
     OPT_OUT = "opt_out"
@@ -18,18 +22,21 @@ class Status(StrEnum):
 
 
 TERMINAIS = frozenset({
-    Status.QUENTE, Status.FRIO, Status.OPT_OUT,
+    Status.PAGO, Status.ESCALADO, Status.QUENTE, Status.FRIO, Status.OPT_OUT,
     Status.DADO_DESATUALIZADO, Status.SEM_RESPOSTA, Status.INVALIDO,
 })
 
 _FECHAMENTOS = frozenset({
-    Status.QUENTE, Status.FRIO, Status.OPT_OUT, Status.DADO_DESATUALIZADO,
+    Status.ESCALADO, Status.QUENTE, Status.FRIO, Status.OPT_OUT,
+    Status.DADO_DESATUALIZADO,
 })
 
 TRANSICOES: dict[Status, frozenset[Status]] = {
     Status.NOVO: frozenset({Status.CONTATADO, Status.INVALIDO}),
     Status.CONTATADO: frozenset({Status.EM_CONVERSA, Status.SEM_RESPOSTA} | _FECHAMENTOS),
-    Status.EM_CONVERSA: frozenset({Status.SEM_RESPOSTA} | _FECHAMENTOS),
+    Status.EM_CONVERSA: frozenset({Status.NEGOCIANDO, Status.SEM_RESPOSTA} | _FECHAMENTOS),
+    Status.NEGOCIANDO: frozenset({Status.AGUARDANDO_PAGAMENTO, Status.SEM_RESPOSTA} | _FECHAMENTOS),
+    Status.AGUARDANDO_PAGAMENTO: frozenset({Status.PAGO, Status.SEM_RESPOSTA} | _FECHAMENTOS),
 }
 
 
@@ -58,4 +65,5 @@ def transicionar(conn: sqlite3.Connection, lead_id: int, para: Status,
 
 
 def robo_pode_falar(status: Status) -> bool:
-    return status in (Status.CONTATADO, Status.EM_CONVERSA)
+    return status in (Status.CONTATADO, Status.EM_CONVERSA,
+                      Status.NEGOCIANDO, Status.AGUARDANDO_PAGAMENTO)
