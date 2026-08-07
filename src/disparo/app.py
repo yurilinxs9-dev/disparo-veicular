@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 from types import SimpleNamespace
 
+from pathlib import Path
+
 import httpx
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
@@ -15,6 +17,7 @@ from disparo.agendador import tentar_disparar
 from disparo.config import carregar_config
 from disparo.db import conectar, criar_schema
 from disparo.evolution import Evolution
+from disparo.manutencao import backup, encerrar_sem_resposta
 from disparo.midia import transcritor_whisper
 
 
@@ -57,6 +60,14 @@ def main() -> FastAPI:
     agenda.add_job(
         lambda: tentar_disparar(estado.conn, estado.evo, datetime.now(), estado.rng),
         "interval", minutes=1, id="disparo",
+    )
+    agenda.add_job(
+        lambda: encerrar_sem_resposta(estado.conn, datetime.now()),
+        "interval", hours=1, id="sem_resposta",
+    )
+    agenda.add_job(
+        lambda: backup(estado.conn, Path("./backups"), datetime.now()),
+        "cron", hour=3, id="backup",
     )
     agenda.start()
     return app
