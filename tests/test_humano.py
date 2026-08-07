@@ -3,9 +3,18 @@ import random
 
 from disparo.humano import (atraso_leitura, atraso_resposta,
                             duracao_digitando, intervalo_entre_disparos,
-                            quebrar)
+                            primeiro_nome, quebrar)
 
 RNG = random.Random(42)
+
+
+def test_primeiro_nome_extrai_o_primeiro_pedaco():
+    assert primeiro_nome("Joao da Silva") == "Joao"
+
+
+def test_primeiro_nome_vazio_cai_para_cliente():
+    assert primeiro_nome("") == "cliente"
+    assert primeiro_nome("   ") == "cliente"
 
 
 def test_faixas():

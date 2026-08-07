@@ -6,7 +6,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from disparo import handoff
+from disparo import eventos, handoff
+from disparo.humano import primeiro_nome
 from disparo.maquina import Status, status_de, transicionar
 
 BOAS_VINDAS = ("Pagamento confirmado, {nome}! Seja bem-vindo à Porto Sul. "
@@ -36,13 +37,25 @@ def criar_rotas(estado) -> APIRouter:
             return {"ok": True}
 
         agora = datetime.now()
-        if status_de(estado.conn, lead["id"]) != Status.AGUARDANDO_PAGAMENTO:
-            return {"ok": True}  # repetido ou fora de ordem
+        status_atual = status_de(estado.conn, lead["id"])
+        if status_atual != Status.AGUARDANDO_PAGAMENTO:
+            if status_atual != Status.PAGO:
+                eventos.registrar(
+                    estado.conn, "alerta",
+                    f"pagamento recebido de {lead['nome']} apos escalada — "
+                    f"conferir cobranca {lead['cobranca_id']}",
+                    agora, lead["id"],
+                )
+                estado.evo.enviar_texto(
+                    estado.cfg.equipe_telefone,
+                    f"Pagamento recebido de {lead['nome']} depois da escalada. "
+                    f"Confere a cobrança {lead['cobranca_id']}.",
+                )
+            return {"ok": True}  # repetido, fora de ordem ou pós-escalada
 
         transicionar(estado.conn, lead["id"], Status.PAGO, agora)
-        primeiro_nome = lead["nome"].split()[0]
         estado.evo.enviar_texto(lead["telefone_e164"],
-                                BOAS_VINDAS.format(nome=primeiro_nome))
+                                BOAS_VINDAS.format(nome=primeiro_nome(lead["nome"])))
         handoff.avisar_vistoria(estado.conn, estado.evo,
                                 estado.cfg.equipe_telefone, lead, agora)
         return {"ok": True}

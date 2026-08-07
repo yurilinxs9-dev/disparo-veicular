@@ -1,3 +1,5 @@
+import pytest
+
 from disparo.config import carregar_config
 
 
@@ -32,3 +34,18 @@ def test_powercrm_configurado():
     assert cfg.powercrm_token == "t1"
     assert cfg.powercrm_webhook_token == "t2"
     assert cfg.equipe_telefone == "5537999990000"
+
+
+def test_powercrm_parcial_falha_rapido():
+    with pytest.raises(RuntimeError, match="POWERCRM_TOKEN"):
+        carregar_config(_env_completo(
+            POWERCRM_BASE_URL="https://api.powercrm.com.br/",
+        ))
+
+
+def test_powercrm_parcial_com_so_um_token_falha_rapido():
+    with pytest.raises(RuntimeError, match="POWERCRM_WEBHOOK_TOKEN"):
+        carregar_config(_env_completo(
+            POWERCRM_BASE_URL="https://api.powercrm.com.br/",
+            POWERCRM_TOKEN="t1",
+        ))

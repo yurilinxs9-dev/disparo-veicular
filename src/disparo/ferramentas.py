@@ -93,6 +93,8 @@ class Ferramentas:
 
     def _gerar_cobranca(self) -> str:
         lead = self._linha()
+        if lead["cobranca_id"]:
+            return f"cobranca ja criada: {lead['boleto_url']}"
         if not lead["cotacao_id"]:
             return "erro: nenhuma cotacao feita"
         try:

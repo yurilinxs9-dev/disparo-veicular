@@ -5,7 +5,8 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from disparo import eventos, handoff
+from disparo import disjuntor, eventos, handoff
+from disparo.humano import primeiro_nome
 from disparo.maquina import Status, transicionar
 
 LEMBRETE = ("Oi {nome}, tudo bem? Só lembrando do boleto da proteção: {boleto}. "
@@ -31,6 +32,9 @@ def encerrar_sem_resposta(conn: sqlite3.Connection, agora: datetime,
 
 def cobrar_pendentes(conn: sqlite3.Connection, evo, telefone_equipe: str,
                      agora: datetime) -> tuple[int, int]:
+    if disjuntor.esta_pausado(conn):
+        return (0, 0)  # kill switch: nem lembrete nem escalada enquanto pausado
+
     corte_48 = (agora - timedelta(hours=48)).isoformat()
     corte_72 = (agora - timedelta(hours=72)).isoformat()
 
@@ -48,9 +52,8 @@ def cobrar_pendentes(conn: sqlite3.Connection, evo, telefone_equipe: str,
         "AND cobranca_enviada_em < ? AND lembrete_em IS NULL", (corte_48,),
     ).fetchall()
     for lead in pendentes:
-        primeiro_nome = lead["nome"].split()[0]
         evo.enviar_texto(lead["telefone_e164"], LEMBRETE.format(
-            nome=primeiro_nome, boleto=lead["boleto_url"]))
+            nome=primeiro_nome(lead["nome"]), boleto=lead["boleto_url"]))
         conn.execute("UPDATE leads SET lembrete_em = ? WHERE id = ?",
                      (agora.isoformat(), lead["id"]))
         conn.commit()

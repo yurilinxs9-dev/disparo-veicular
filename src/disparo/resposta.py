@@ -96,10 +96,11 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     decisao = qualificacao.decisao
     if turnos >= TETO_TURNOS and decisao == "continuar":
         decisao = "escalar"
-    if ferramentas is not None and ferramentas.falhas_powercrm >= 2:
-        decisao = "escalar"
-    if ferramentas is not None and ferramentas.escalou:
-        decisao = "escalar"
+    if decisao != "opt_out":  # blocklist sempre vence sobre as escaladas automáticas
+        if ferramentas is not None and ferramentas.falhas_powercrm >= 2:
+            decisao = "escalar"
+        if ferramentas is not None and ferramentas.escalou:
+            decisao = "escalar"
 
     dormir(humano.atraso_resposta(rng))
     if qualificacao.resposta:

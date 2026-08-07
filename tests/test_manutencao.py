@@ -81,6 +81,16 @@ def test_antes_de_48h_nada(conn, lead):
     assert cobrar_pendentes(conn, EvoFalsa(), "x", AGORA) == (0, 0)
 
 
+def test_pausado_nao_cobra_pendentes(conn, lead):
+    from disparo.disjuntor import pausar
+    from disparo.manutencao import cobrar_pendentes
+    _com_boleto(conn, lead, AGORA - timedelta(hours=49))
+    pausar(conn, "teste", AGORA)
+    evo = EvoFalsa()
+    assert cobrar_pendentes(conn, evo, "5537999990000", AGORA) == (0, 0)
+    assert evo.enviados == []
+
+
 def test_72h_escala(conn, lead):
     from disparo.manutencao import cobrar_pendentes
     from disparo.maquina import Status, status_de

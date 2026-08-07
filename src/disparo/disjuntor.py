@@ -12,7 +12,8 @@ MINIMO_PARA_AVALIAR = 20
 PISO_RESPOSTA = 0.10
 TETO_OPT_OUT = 3
 
-_RESPONDERAM = ("em_conversa", "quente", "frio", "opt_out", "dado_desatualizado")
+_RESPONDERAM = ("em_conversa", "quente", "frio", "opt_out", "dado_desatualizado",
+                "negociando", "aguardando_pagamento", "pago", "escalado")
 
 
 @dataclass(frozen=True)

@@ -77,6 +77,19 @@ def test_evento_repetido_e_ignorado(conn, lead):
     assert len(estado.evo.enviados) == 2  # só o primeiro teve efeito
 
 
+def test_pagamento_apos_escalada_avisa_equipe_sem_transicionar(conn, lead):
+    _aguardando(conn, lead)
+    transicionar(conn, lead, Status.ESCALADO, AGORA)
+    estado = _estado(conn)
+    cliente = TestClient(criar_app(estado))
+    r = cliente.post("/webhook/powercrm", headers=CABECALHO,
+                     json={"evento": "cobranca_paga", "cobranca_id": "B1"})
+    assert r.status_code == 200
+    assert status_de(conn, lead) == Status.ESCALADO  # nenhuma transição
+    destinos = [d for d, _ in estado.evo.enviados]
+    assert "5537999990000" in destinos  # equipe alertada
+
+
 def test_cobranca_desconhecida_nao_quebra(conn):
     cliente = TestClient(criar_app(_estado(conn)))
     r = cliente.post("/webhook/powercrm", headers=CABECALHO,

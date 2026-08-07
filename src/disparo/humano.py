@@ -7,6 +7,12 @@ import re
 _FIM_DE_FRASE = re.compile(r"(?<=[.!?])\s+")
 
 
+def primeiro_nome(nome: str) -> str:
+    """Devolve o primeiro nome de `nome`, ou 'cliente' se vier vazio."""
+    partes = nome.split()
+    return partes[0] if partes else "cliente"
+
+
 def atraso_leitura(rng: random.Random) -> float:
     """Segundos entre a mensagem chegar e ser marcada como lida."""
     return rng.uniform(3, 20)

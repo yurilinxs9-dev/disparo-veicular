@@ -12,6 +12,7 @@ class PowerFalso:
     def __init__(self, fora_do_ar=False, recusa=False):
         self.fora_do_ar = fora_do_ar
         self.recusa = recusa
+        self.chamadas_cobranca = 0
 
     def cotar(self, nome, telefone, placa):
         if self.fora_do_ar:
@@ -21,6 +22,7 @@ class PowerFalso:
         return Cotacao("C1", "Master", "189.90", "250.00")
 
     def gerar_cobranca(self, cotacao_id):
+        self.chamadas_cobranca += 1
         return Cobranca("B1", "https://p/b1", "000201x")
 
 
@@ -83,12 +85,14 @@ def test_cobranca_grava_e_aguarda(conn, lead):
 
 def test_cobranca_dupla_nao_explode(conn, lead):
     _em_conversa(conn, lead)
-    f = Ferramentas(conn, PowerFalso(), lead, AGORA)
+    power = PowerFalso()
+    f = Ferramentas(conn, power, lead, AGORA)
     f.executar("cotar", {"placa": "ABC1D23"})
     f.executar("gerar_cobranca", {})
     saida = f.executar("gerar_cobranca", {})
     assert "https://p/b1" in saida
     assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
+    assert power.chamadas_cobranca == 1  # não reemite boleto, não chama a API de novo
 
 
 def test_escalar(conn, lead):

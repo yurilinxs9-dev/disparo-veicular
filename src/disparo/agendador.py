@@ -9,6 +9,7 @@ from datetime import datetime
 from disparo import cota, disjuntor, eventos, janela
 from disparo.conversador import abertura
 from disparo.evolution import EvolutionErro
+from disparo.humano import primeiro_nome
 from disparo.maquina import Status, transicionar
 
 
@@ -56,7 +57,7 @@ def tentar_disparar(conn: sqlite3.Connection, evo, agora: datetime,
             )
             return Resultado(False, "numero inexistente")
 
-        texto = abertura(lead["nome"].split()[0], rng)
+        texto = abertura(primeiro_nome(lead["nome"]), rng)
         wa_id = evo.enviar_texto(lead["telefone_e164"], texto)
     except EvolutionErro as erro:
         eventos.registrar(conn, "alerta", f"Falha ao enviar: {erro}", agora, lead["id"])

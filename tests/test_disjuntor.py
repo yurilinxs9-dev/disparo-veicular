@@ -83,6 +83,31 @@ def test_opt_outs_disparam_com_dezenove_contatos(conn):
     assert "opt-out" in v.motivo
 
 
+def _semear_status(conn, contatados: int, status_resposta: str, responderam: int):
+    for i in range(contatados):
+        conn.execute(
+            "INSERT INTO leads (nome, telefone_e164, veiculo, status, criado_em, "
+            "contatado_em) VALUES (?, ?, '', ?, ?, ?)",
+            (f"S{i}", f"55115{i:08d}",
+             status_resposta if i < responderam else "contatado",
+             AGORA.isoformat(), AGORA.isoformat()),
+        )
+    conn.commit()
+
+
+def test_pago_conta_como_resposta(conn):
+    _semear_status(conn, contatados=20, status_resposta="pago", responderam=4)
+    assert avaliar(conn).ok is True
+
+
+def test_negociando_aguardando_e_escalado_contam_como_resposta(conn):
+    for status in ("negociando", "aguardando_pagamento", "escalado"):
+        conn.execute("DELETE FROM leads")
+        conn.commit()
+        _semear_status(conn, contatados=20, status_resposta=status, responderam=4)
+        assert avaliar(conn).ok is True, status
+
+
 def test_janela_usa_contatado_em_nao_id(conn):
     # Leads "novos" (contatado_em maior, sem opt-out) sao inseridos primeiro,
     # entao ficam com id MENOR. Leads "antigos" (contatado_em menor, com

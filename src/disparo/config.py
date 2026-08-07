@@ -36,6 +36,16 @@ def carregar_config(env: Mapping[str, str] | None = None) -> Config:
     ]
     if faltando:
         raise RuntimeError("variáveis de ambiente ausentes: " + ", ".join(faltando))
+
+    if e.get("POWERCRM_BASE_URL"):
+        faltando_powercrm = [
+            chave for chave in ("POWERCRM_TOKEN", "POWERCRM_WEBHOOK_TOKEN")
+            if not e.get(chave)
+        ]
+        if faltando_powercrm:
+            raise RuntimeError(
+                "variáveis de ambiente ausentes: " + ", ".join(faltando_powercrm)
+            )
     return Config(
         db=Path(e["DISPARO_DB"]),
         anthropic_api_key=e["ANTHROPIC_API_KEY"],

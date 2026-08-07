@@ -158,3 +158,32 @@ def test_duas_falhas_do_powercrm_escalam(conn, lead):
     processar(conn, evo, cliente, CFG, _msg(), AGORA, RNG,
               dormir=lambda s: None, powercrm=PowerQuebrado())
     assert status_de(conn, lead) == Status.ESCALADO
+
+
+def test_falhas_powercrm_nao_sobrescreve_opt_out(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    transicionar(conn, lead, Status.EM_CONVERSA, AGORA)
+
+    class PowerQuebrado:
+        def cotar(self, *a):
+            from disparo.powercrm import PowerCRMIndisponivel
+            raise PowerCRMIndisponivel("503")
+
+        def gerar_cobranca(self, *a):
+            from disparo.powercrm import PowerCRMIndisponivel
+            raise PowerCRMIndisponivel("503")
+
+    from types import SimpleNamespace as NS
+    respostas = iter([
+        NS(parsed_output=None, content=[
+            NS(type="tool_use", id="t1", name="cotar", input={"placa": "A"})]),
+        NS(parsed_output=None, content=[
+            NS(type="tool_use", id="t2", name="cotar", input={"placa": "A"})]),
+        NS(parsed_output=_q("opt_out", "Para de mandar mensagem."), content=[]),
+    ])
+    cliente = NS(messages=NS(parse=lambda **kw: next(respostas)))
+    evo = EvoFalsa()
+    processar(conn, evo, cliente, CFG, _msg("para de mandar"), AGORA, RNG,
+              dormir=lambda s: None, powercrm=PowerQuebrado())
+    assert status_de(conn, lead) == Status.OPT_OUT
+    assert esta_bloqueado(conn, "5511988884444") is True
