@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel de operação — disparo e qualificação</title>
+<style>
+  :root {
+    --bg: #F2F3F5;
+    --surface: #FFFFFF;
+    --surface-2: #E9EBEF;
+    --ink: #14181F;
+    --ink-2: #5A6472;
+    --ink-3: #8A93A2;
+    --line: #D5D9E0;
+    --accent: #123FA8;
+    --accent-ink: #FFFFFF;
+    --accent-soft: rgba(18, 63, 168, .10);
+    --ok: #12795C;
+    --ok-soft: rgba(18, 121, 92, .12);
+    --warn: #8F6206;
+    --warn-soft: rgba(143, 98, 6, .14);
+    --crit: #A82A2A;
+    --crit-soft: rgba(168, 42, 42, .12);
+    --shadow: 0 1px 2px rgba(20, 24, 31, .06), 0 8px 24px rgba(20, 24, 31, .05);
+
+    --f-display: "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --f-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E1116;
+      --surface: #161A21;
+      --surface-2: #1E232C;
+      --ink: #E7EAF0;
+      --ink-2: #97A0B0;
+      --ink-3: #6C7788;
+      --line: #2A303B;
+      --accent: #6E9BFF;
+      --accent-ink: #0E1116;
+      --accent-soft: rgba(110, 155, 255, .14);
+      --ok: #3FBF92;
+      --ok-soft: rgba(63, 191, 146, .14);
+      --warn: #E0A93A;
+      --warn-soft: rgba(224, 169, 58, .14);
+      --crit: #F0716B;
+      --crit-soft: rgba(240, 113, 107, .14);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .28);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 18px 20px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .eyebrow {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  .mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+
+  .brand-name {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .16em;
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .brand-sub { color: var(--ink-3); font-size: 13px; }
+
+  .status-lamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: 13px;
+    padding: 5px 12px 5px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+
+  .status-lamp[data-state="ativo"] { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+  .status-lamp[data-state="pausado"] { background: var(--crit-soft); color: var(--crit); border-color: var(--crit); }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .status-lamp[data-state="ativo"] .dot { animation: pulse 2.4s ease-in-out infinite; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+  .clock { font-family: var(--f-mono); font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    padding: 7px 14px;
+    transition: background .15s ease, border-color .15s ease;
+  }
+
+  button:hover { background: var(--surface-2); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .btn-kill {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    border-color: var(--crit);
+    color: var(--crit);
+  }
+
+  .btn-kill:hover { background: var(--crit-soft); }
+
+  .instruments {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+  }
+
+  .gauge { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+  .gauge-value {
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: -.02em;
+  }
+
+  .gauge-value small { font-size: 16px; color: var(--ink-3); letter-spacing: 0; }
+
+  .gauge-note { font-size: 12.5px; color: var(--ink-2); }
+
+  .bar { height: 7px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .5s ease; }
+
+  .lamp-ok { color: var(--ok); }
+  .lamp-crit { color: var(--crit); }
+
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+
+  .panel-title {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .13em;
+    font-size: 13px;
+    margin-right: auto;
+  }
+
+  .panel-head input[type="search"], .panel-head select {
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 5px 9px;
+  }
+
+  .table-scroll { overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+
+  th {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    text-align: left;
+    font-weight: 400;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  td { padding: 11px 16px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
+
+  tbody tr { cursor: pointer; transition: background .12s ease; }
+  tbody tr:hover { background: var(--accent-soft); }
+  tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  tbody tr[aria-selected="true"] { background: var(--accent-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .lead-name { font-weight: 600; }
+
+  .phone {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    display: inline-block;
+    margin-top: 3px;
+  }
+
+  .veiculo { color: var(--ink-2); font-size: 13.5px; }
+  .resumo { color: var(--ink-2); font-size: 13px; max-width: 34ch; }
+  .quando { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .pill[data-s="quente"] { background: var(--crit-soft); color: var(--crit); border-color: var(--crit); }
+  .pill[data-s="em_conversa"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .pill[data-s="contatado"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
+  .pill[data-s="novo"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
+  .pill[data-s="frio"] { background: var(--surface-2); color: var(--ink-3); border-color: var(--line); }
+  .pill[data-s="opt_out"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+  .pill[data-s="sem_resposta"], .pill[data-s="invalido"], .pill[data-s="dado_desatualizado"] {
+    background: transparent; color: var(--ink-3); border-color: var(--line);
+  }
+
+  .tabs { display: flex; gap: 4px; }
+
+  .tab {
+    font-family: var(--f-display);
+    text-transform: uppercase;
+    letter-spacing: .11em;
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-2);
+  }
+
+  .tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+  .feed { padding: 6px 0 10px; max-height: 620px; overflow-y: auto; }
+
+  .feed-item {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 10px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+    border-left: 2px solid transparent;
+  }
+
+  .feed-item.is-new { animation: slide-in .4s ease; }
+  @keyframes slide-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  .feed-item[data-kind="envio"] { border-left-color: var(--accent); }
+  .feed-item[data-kind="resposta"] { border-left-color: var(--ok); }
+  .feed-item[data-kind="quente"] { border-left-color: var(--crit); }
+  .feed-item[data-kind="alerta"] { border-left-color: var(--warn); }
+  .feed-item[data-kind="sistema"] { border-left-color: var(--line); }
+
+  .feed-time { font-family: var(--f-mono); font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .feed-text { color: var(--ink-2); }
+  .feed-text b { font-weight: 600; color: var(--ink); }
+
+  .thread { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
+
+  .bubble {
+    max-width: 82%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .bubble small { display: block; margin-top: 4px; font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); }
+
+  .bubble[data-from="saida"] { align-self: flex-end; background: var(--accent-soft); border: 1px solid var(--line); border-bottom-right-radius: 3px; }
+  .bubble[data-from="entrada"] { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 3px; }
+
+  .verdict {
+    margin: 0 16px 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .verdict-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+
+  .field { display: flex; flex-direction: column; gap: 1px; }
+  .field .k { font-family: var(--f-display); text-transform: uppercase; letter-spacing: .1em; font-size: 10.5px; color: var(--ink-3); }
+  .field .v { font-family: var(--f-mono); font-size: 13px; }
+
+  .empty { padding: 40px 16px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+
+  @media (max-width: 1060px) {
+    .instruments { grid-template-columns: minmax(0, 1fr); }
+    .columns { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 12px 12px 40px; }
+    .topbar { padding: 10px 12px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Disparo &amp; Qualificação</span>
+    <span class="brand-sub">Porto Sul proteção veicular</span>
+  </div>
+  <span class="status-lamp" data-state="ativo" id="lamp"><span class="dot"></span><span id="lampText">Ativo</span></span>
+  <span class="clock" id="clock">—</span>
+  <button class="btn-kill" id="killBtn">Pausar tudo</button>
+</header>
+
+<div class="wrap">
+
+  <section class="instruments">
+
+    <article class="card gauge">
+      <span class="eyebrow">Cota de hoje</span>
+      <span class="gauge-value" id="cotaValor">—</span>
+      <div class="bar"><span id="cotaBar" style="width:0%"></span></div>
+      <span class="gauge-note">Janela 09:00–18:00 · seg a sex</span>
+    </article>
+
+    <article class="card gauge">
+      <span class="eyebrow">Disjuntor</span>
+      <span class="gauge-value lamp-ok" id="breakerState">—</span>
+      <span class="gauge-note" id="breakerMotivo"></span>
+      <span class="gauge-note">
+        <label for="csv" style="cursor:pointer;text-decoration:underline">Importar lista CSV</label>
+        <input type="file" id="csv" accept=".csv" style="display:none">
+        <span id="csvResultado"></span>
+      </span>
+    </article>
+
+  </section>
+
+  <section class="columns">
+
+    <article class="card">
+      <div class="panel-head">
+        <span class="panel-title">Leads</span>
+        <input type="search" id="busca" placeholder="Buscar nome ou telefone">
+        <select id="filtro">
+          <option value="">Todos</option>
+          <option value="novo">Novo</option>
+          <option value="contatado">Contatado</option>
+          <option value="em_conversa">Em conversa</option>
+          <option value="quente">Quente</option>
+          <option value="frio">Frio</option>
+          <option value="opt_out">Opt-out</option>
+          <option value="sem_resposta">Sem resposta</option>
+          <option value="invalido">Inválido</option>
+        </select>
+        <span class="quando" id="leadCount"></span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Lead</th>
+              <th scope="col">Veículo</th>
+              <th scope="col">Status</th>
+              <th scope="col">Resumo</th>
+              <th scope="col">Último contato</th>
+            </tr>
+          </thead>
+          <tbody id="leadRows"></tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="panel-head">
+        <span class="panel-title" id="sideTitle">Ao vivo</span>
+        <div class="tabs" role="tablist" aria-label="Painel lateral">
+          <button class="tab" role="tab" id="tabFeed" aria-selected="true" aria-controls="paneFeed">Ao vivo</button>
+          <button class="tab" role="tab" id="tabThread" aria-selected="false" aria-controls="paneThread">Conversa</button>
+        </div>
+      </div>
+
+      <div class="feed" id="paneFeed" role="tabpanel" aria-labelledby="tabFeed"></div>
+
+      <div id="paneThread" role="tabpanel" aria-labelledby="tabThread" hidden>
+        <div class="thread" id="thread"></div>
+        <div class="verdict" id="verdict"></div>
+      </div>
+    </article>
+
+  </section>
+
+</div>
+
+<script>
+  const cabecalho = { credentials: "same-origin" };
+
+  const rowsEl = document.getElementById("leadRows");
+  const feedEl = document.getElementById("paneFeed");
+  const threadEl = document.getElementById("thread");
+  const verdictEl = document.getElementById("verdict");
+  const tabFeed = document.getElementById("tabFeed");
+  const tabThread = document.getElementById("tabThread");
+  const paneFeed = document.getElementById("paneFeed");
+  const paneThread = document.getElementById("paneThread");
+  const sideTitle = document.getElementById("sideTitle");
+
+  const texto = (v) => {
+    const el = document.createElement("span");
+    el.textContent = v == null ? "" : String(v);
+    return el.innerHTML;
+  };
+
+  const hora = (iso) => (iso || "").slice(11, 16) || (iso || "").slice(0, 10);
+
+  function renderizarLeads(leads) {
+    rowsEl.innerHTML = "";
+    document.getElementById("leadCount").textContent = leads.length + " na lista";
+    leads.forEach((lead) => {
+      const tr = document.createElement("tr");
+      tr.tabIndex = 0;
+      tr.setAttribute("role", "button");
+      tr.setAttribute("aria-selected", "false");
+      tr.innerHTML =
+        '<td><span class="lead-name">' + texto(lead.nome) + '</span><br><span class="phone">' + texto(lead.telefone_e164) + '</span></td>' +
+        '<td class="veiculo">' + texto(lead.veiculo) + '</td>' +
+        '<td><span class="pill" data-s="' + texto(lead.status) + '">' + texto(lead.status).replace("_", " ") + '</span></td>' +
+        '<td class="resumo">' + texto(lead.resumo || "") + '</td>' +
+        '<td class="quando">' + texto(hora(lead.ultimo_evento_em || lead.contatado_em || lead.criado_em)) + '</td>';
+      tr.addEventListener("click", () => abrirLead(lead.id, tr));
+      tr.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirLead(lead.id, tr); }
+      });
+      rowsEl.appendChild(tr);
+    });
+  }
+
+  function renderizarConversa(lead, mensagens) {
+    threadEl.innerHTML = "";
+    if (!mensagens.length) {
+      threadEl.innerHTML = '<p class="empty">Sem mensagens ainda.</p>';
+    }
+    mensagens.forEach((m) => {
+      const b = document.createElement("div");
+      b.className = "bubble";
+      b.dataset.from = m.direcao;
+      b.innerHTML = texto(m.texto) + '<small>' +
+        (m.direcao === "saida" ? "robô" : texto((lead.nome || "").split(" ")[0])) +
+        ' · ' + texto(hora(m.criado_em)) + '</small>';
+      threadEl.appendChild(b);
+    });
+
+    const campo = (k, v) =>
+      '<span class="field"><span class="k">' + k + '</span><span class="v">' + texto(v || "—") + '</span></span>';
+    verdictEl.innerHTML =
+      '<span class="eyebrow">Leitura do qualificador</span>' +
+      '<div class="verdict-grid">' +
+      campo("Status", lead.status) + campo("Turnos do robô", lead.turnos) +
+      campo("Tem cobertura", lead.tem_cobertura) + campo("Paga hoje", lead.paga_hoje) +
+      '</div>' +
+      '<div class="field"><span class="k">Resumo para a vendedora</span><span class="v">' + texto(lead.resumo || "—") + '</span></div>';
+
+    sideTitle.textContent = lead.nome;
+    mostrarAba("thread");
+  }
+
+  function adicionarEvento(evento) {
+    const el = document.createElement("div");
+    el.className = "feed-item is-new";
+    el.dataset.kind = evento.tipo;
+    el.innerHTML = '<span class="feed-time">' + texto(hora(evento.criado_em)) + '</span>' +
+      '<span class="feed-text">' + texto(evento.texto) + '</span>';
+    feedEl.prepend(el);
+    while (feedEl.children.length > 50) feedEl.removeChild(feedEl.lastChild);
+  }
+
+  function mostrarAba(qual) {
+    const ehThread = qual === "thread";
+    tabThread.setAttribute("aria-selected", String(ehThread));
+    tabFeed.setAttribute("aria-selected", String(!ehThread));
+    paneThread.hidden = !ehThread;
+    paneFeed.hidden = ehThread;
+    if (!ehThread) sideTitle.textContent = "Ao vivo";
+  }
+
+  async function carregarEstado() {
+    const r = await fetch("/api/estado", cabecalho);
+    if (!r.ok) return;
+    const e = await r.json();
+    document.getElementById("cotaValor").innerHTML =
+      `${e.enviados}<small> / ${e.limite}</small>`;
+    document.getElementById("cotaBar").style.width =
+      `${e.limite ? (e.enviados / e.limite) * 100 : 0}%`;
+    document.getElementById("lampText").textContent = e.pausado ? "Pausado" : "Ativo";
+    document.getElementById("lamp").dataset.state = e.pausado ? "pausado" : "ativo";
+    document.getElementById("killBtn").textContent = e.pausado ? "Retomar" : "Pausar tudo";
+    const breaker = document.getElementById("breakerState");
+    breaker.textContent = e.disjuntor.ok ? "OK" : "PAUSA";
+    breaker.className = "gauge-value " + (e.disjuntor.ok ? "lamp-ok" : "lamp-crit");
+    document.getElementById("breakerMotivo").textContent = e.disjuntor.motivo || "";
+  }
+
+  async function carregarLeads() {
+    const busca = document.getElementById("busca").value;
+    const filtro = document.getElementById("filtro").value;
+    const q = new URLSearchParams();
+    if (busca) q.set("busca", busca);
+    if (filtro) q.set("status", filtro);
+    const r = await fetch(`/api/leads?${q}`, cabecalho);
+    if (r.ok) renderizarLeads(await r.json());
+  }
+
+  async function abrirLead(id, tr) {
+    Array.from(rowsEl.children).forEach((linha) =>
+      linha.setAttribute("aria-selected", String(linha === tr)));
+    const r = await fetch(`/api/leads/${id}`, cabecalho);
+    if (!r.ok) return;
+    const dados = await r.json();
+    renderizarConversa(dados.lead, dados.mensagens);
+  }
+
+  new EventSource("/api/eventos/stream").onmessage = (ev) => {
+    adicionarEvento(JSON.parse(ev.data));
+  };
+
+  document.getElementById("killBtn").addEventListener("click", async () => {
+    const pausado = document.getElementById("lamp").dataset.state === "pausado";
+    await fetch("/api/pausar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pausar: !pausado }),
+    });
+    carregarEstado();
+  });
+
+  document.getElementById("busca").addEventListener("input", () => {
+    clearTimeout(window.__buscaTimer);
+    window.__buscaTimer = setTimeout(carregarLeads, 300);
+  });
+  document.getElementById("filtro").addEventListener("change", carregarLeads);
+
+  document.getElementById("csv").addEventListener("change", async (ev) => {
+    const arquivo = ev.target.files[0];
+    if (!arquivo) return;
+    const form = new FormData();
+    form.append("arquivo", arquivo);
+    const r = await fetch("/api/importar", { method: "POST", body: form });
+    const saida = document.getElementById("csvResultado");
+    if (r.ok) {
+      const rel = await r.json();
+      saida.textContent = ` — ${rel.importados} novos de ${rel.lidos} lidos`;
+      carregarLeads();
+    } else {
+      saida.textContent = " — falha na importação";
+    }
+    ev.target.value = "";
+  });
+
+  tabFeed.addEventListener("click", () => mostrarAba("feed"));
+  tabThread.addEventListener("click", () => {
+    if (!threadEl.children.length) {
+      threadEl.innerHTML = '<p class="empty">Escolha um lead na tabela para ver a conversa.</p>';
+      verdictEl.innerHTML = "";
+    }
+    mostrarAba("thread");
+  });
+
+  setInterval(() => {
+    const agora = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    document.getElementById("clock").textContent =
+      p(agora.getHours()) + ":" + p(agora.getMinutes()) + ":" + p(agora.getSeconds());
+  }, 1000);
+
+  threadEl.innerHTML = '<p class="empty">Escolha um lead na tabela para ver a conversa.</p>';
+  carregarEstado();
+  carregarLeads();
+  setInterval(carregarEstado, 15000);
+</script>
+
+</body>
+</html>

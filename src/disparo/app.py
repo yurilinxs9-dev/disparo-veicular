@@ -10,7 +10,7 @@ import httpx
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
-from disparo import webhook
+from disparo import painel, webhook
 from disparo.agendador import tentar_disparar
 from disparo.config import carregar_config
 from disparo.db import conectar, criar_schema
@@ -22,6 +22,7 @@ def criar_app(estado) -> FastAPI:
     app = FastAPI(title="Disparo Porto Sul")
     app.state.estado = estado
     app.include_router(webhook.criar_rotas(estado))
+    app.include_router(painel.criar_rotas(estado))
 
     @app.get("/saude")
     def saude() -> dict:
