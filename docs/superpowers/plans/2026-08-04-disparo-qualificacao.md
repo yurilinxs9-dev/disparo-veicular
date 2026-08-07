@@ -2369,6 +2369,13 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     if cursor.rowcount == 0:
         return  # webhook repetido
 
+    if mensagem.transcricao_falhou:
+        eventos.registrar(
+            conn, "alerta",
+            f"Nao consegui transcrever o audio de {lead['nome']}",
+            agora, lead["id"],
+        )
+
     if status_de(conn, lead["id"]) == Status.CONTATADO:
         transicionar(conn, lead["id"], Status.EM_CONVERSA, agora)
 
