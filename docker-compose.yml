@@ -1,6 +1,7 @@
 services:
   disparo:
     build: .
+    container_name: disparo
     restart: unless-stopped
     env_file: .env
     ports:
@@ -8,3 +9,11 @@ services:
     volumes:
       - ./dados:/app/dados
       - ./backups:/app/backups
+    networks:
+      - default
+      - evo
+
+networks:
+  evo:
+    name: evolution_evo-internal
+    external: true
