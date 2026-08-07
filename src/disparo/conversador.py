@@ -6,15 +6,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from disparo.ferramentas import FERRAMENTAS_SPEC
+
 MODELO = "claude-haiku-4-5"
-TETO_TURNOS = 12
+TETO_TURNOS = 20
 
 ABERTURAS = ("Oii {nome}, tudo bem?", "Oi {nome}, tudo bem?", "Bom dia {nome}, tudo bem?")
 
 PROMPT = """\
 Você conversa por WhatsApp em nome da Porto Sul, empresa de proteção veicular.
 O objetivo é descobrir se a pessoa tem interesse em uma cotação, e passar para a
-vendedora quando tiver. Você não vende, não fecha e não calcula preço.
+vendedora quando tiver. Você conduz da primeira mensagem até o fechamento.
 
 # Como a conversa anda
 Etapa 1 — confirmar o veículo: "Vi aqui que você tem um {veiculo}, certo?"
@@ -30,6 +32,18 @@ Etapa 4 — oferta: diga que o principal não é o pretinho e sim a proteção, 
   sair bem abaixo de seguro, e pergunte se o carro está protegido por alguma coisa hoje.
   Conforme a resposta, pergunte quanto ele paga por mês e se o carro é quitado ou financiado.
 Etapa 5 — fechamento: ofereça montar a cotação, sem compromisso.
+
+# Fase de fechamento (quando o lead aceita a cotação)
+Etapa 6 — peça a placa do veículo para puxar o valor exato.
+Etapa 7 — com a placa em mãos, use a ferramenta cotar. Apresente o resultado
+  direto: mensalidade e adesão, sem floreio. Não invente nada além do que a
+  ferramenta devolver.
+Etapa 8 — objeção: contorne no máximo 2 vezes, com argumento (custo de ficar
+  sem proteção, aceitação de perfil que seguradora recusa). NUNCA ofereça
+  desconto; se o lead insistir em desconto, use escalar_humano.
+Etapa 9 — aceite: só use gerar_cobranca depois de um sim explícito ("fecho",
+  "pode mandar", "aceito"). Envie o link do boleto e diga que dá pra pagar
+  pelo PIX no próprio boleto. Depois disso, encerre educadamente e aguarde.
 
 # Como escrever
 Português neutro e educado, como uma pessoa escrevendo no WhatsApp. Voz feminina —
@@ -49,21 +63,19 @@ primeiro. Sem caixa alta e sem exclamação dupla. Espelhe o registro do lead.
 - Nunca insista depois de uma recusa.
 
 # Classificação
-decisao=quente quando ele aceita a cotação, pergunta preço, demonstra achar caro o que
-paga, não tem cobertura e demonstra interesse, ou teve seguro recusado.
 decisao=frio quando responde sem interesse ou já está satisfeito com o que tem.
 decisao=opt_out em qualquer pedido para parar de receber mensagem.
 decisao=dado_desatualizado quando o veículo não é dele.
-decisao=continuar no resto.
+decisao=escalar quando você usou escalar_humano ou a conversa precisa de gente.
+decisao=continuar no resto — inclusive durante toda a fase de fechamento.
 
-O campo resposta é exatamente o texto que será enviado ao lead. Se a decisão for
-quente, a resposta deve avisar que a cotação será montada e enviada.
+O campo resposta é exatamente o texto que será enviado ao lead.
 """
 
 
 class Qualificacao(BaseModel):
     resposta: str = Field(description="Texto a enviar ao lead")
-    decisao: Literal["continuar", "quente", "frio", "opt_out", "dado_desatualizado"]
+    decisao: Literal["continuar", "frio", "opt_out", "dado_desatualizado", "escalar"]
     resumo: str = Field(description="Uma linha para a vendedora")
     paga_hoje: str | None = Field(default=None, description="Valor mensal atual")
     tem_cobertura: Literal["sim", "nao", "nao_informado"] = "nao_informado"
@@ -89,8 +101,9 @@ def _conteudo(mensagem: dict) -> list[dict[str, Any]]:
     return blocos
 
 
-def conversar(cliente: Any, lead: dict, historico: list[dict]) -> Qualificacao:
-    """Uma chamada ao Haiku com o histórico completo daquela conversa."""
+def conversar(cliente: Any, lead: dict, historico: list[dict],
+              ferramentas: Any = None, modelo: str = MODELO) -> Qualificacao:
+    """Chama o modelo; executa ferramentas até sair a resposta estruturada."""
     sistema = PROMPT.replace("{veiculo}", lead.get("veiculo") or "seu carro")
     mensagens = [
         {
@@ -99,15 +112,38 @@ def conversar(cliente: Any, lead: dict, historico: list[dict]) -> Qualificacao:
         }
         for m in historico
     ]
-    resposta = cliente.messages.parse(
-        model=MODELO,
-        max_tokens=512,
-        system=[{
-            "type": "text",
-            "text": sistema,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=mensagens,
-        output_format=Qualificacao,
-    )
+    extras: dict[str, Any] = {}
+    if ferramentas is not None:
+        extras["tools"] = FERRAMENTAS_SPEC
+
+    for _ in range(4):
+        resposta = cliente.messages.parse(
+            model=modelo,
+            max_tokens=1024,
+            system=[{
+                "type": "text",
+                "text": sistema,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=mensagens,
+            output_format=Qualificacao,
+            **extras,
+        )
+        usos = [b for b in getattr(resposta, "content", [])
+                if getattr(b, "type", "") == "tool_use"]
+        if not usos or ferramentas is None:
+            break
+        mensagens.append({"role": "assistant", "content": [
+            {"type": "tool_use", "id": u.id, "name": u.name, "input": u.input}
+            for u in usos
+        ]})
+        mensagens.append({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": u.id,
+             "content": ferramentas.executar(u.name, dict(u.input))}
+            for u in usos
+        ]})
+
+    if resposta.parsed_output is None:
+        return Qualificacao(resposta="", decisao="escalar",
+                            resumo="modelo não devolveu saída estruturada")
     return resposta.parsed_output

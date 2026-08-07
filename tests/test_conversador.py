@@ -75,3 +75,61 @@ def test_imagem_entra_como_bloco_de_imagem():
 def test_prompt_contem_as_regras_criticas():
     for trecho in ["Porto Sul", "pretinho", "nunca invente", "automat"]:
         assert trecho.lower() in PROMPT.lower()
+
+
+def test_decisao_quente_saiu_do_schema():
+    from disparo.conversador import Qualificacao
+    import pytest
+    with pytest.raises(Exception):
+        Qualificacao(resposta="x", decisao="quente", resumo="r")
+
+
+def test_laco_executa_ferramenta_e_volta():
+    from types import SimpleNamespace
+    from disparo.conversador import Qualificacao, conversar
+
+    chamadas = []
+
+    class FerramentasFalsas:
+        escalou = False
+        falhas_powercrm = 0
+
+        def executar(self, nome, entrada):
+            chamadas.append((nome, entrada))
+            return "plano Master: mensalidade R$ 189.90, adesao R$ 250.00"
+
+    q = Qualificacao(resposta="Fica R$ 189,90 por mês.", decisao="continuar",
+                     resumo="cotado")
+    respostas = iter([
+        SimpleNamespace(  # 1a chamada: modelo pede a ferramenta
+            parsed_output=None,
+            content=[SimpleNamespace(type="tool_use", id="t1", name="cotar",
+                                     input={"placa": "ABC1D23"})],
+        ),
+        SimpleNamespace(parsed_output=q, content=[]),  # 2a: saída final
+    ])
+    cliente = SimpleNamespace(messages=SimpleNamespace(
+        parse=lambda **kw: next(respostas)))
+    lead = {"nome": "Joao", "veiculo": "Onix 2019"}
+    resultado = conversar(cliente, lead, [
+        {"direcao": "entrada", "texto": "pode cotar, placa ABC1D23"},
+    ], ferramentas=FerramentasFalsas(), modelo="claude-sonnet-5")
+    assert chamadas == [("cotar", {"placa": "ABC1D23"})]
+    assert resultado.decisao == "continuar"
+    assert "189,90" in resultado.resposta
+
+
+def test_sem_ferramentas_nao_manda_tools():
+    from types import SimpleNamespace
+    from disparo.conversador import Qualificacao, conversar
+    capturado = {}
+
+    def parse(**kw):
+        capturado.update(kw)
+        return SimpleNamespace(parsed_output=Qualificacao(
+            resposta="oi", decisao="continuar", resumo="r"), content=[])
+
+    cliente = SimpleNamespace(messages=SimpleNamespace(parse=parse))
+    conversar(cliente, {"nome": "J", "veiculo": "Onix"},
+              [{"direcao": "entrada", "texto": "oi"}])
+    assert "tools" not in capturado or not capturado["tools"]
