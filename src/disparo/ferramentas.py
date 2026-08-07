@@ -6,7 +6,7 @@ from datetime import datetime
 
 from disparo import eventos
 from disparo.maquina import Status, status_de, transicionar
-from disparo.powercrm import PowerCRMErro
+from disparo.powercrm import PowerCRMIndisponivel, PowerCRMRecusa
 
 FERRAMENTAS_SPEC = [
     {
@@ -65,12 +65,17 @@ class Ferramentas:
         lead = self._linha()
         try:
             cot = self._power.cotar(lead["nome"], lead["telefone_e164"], placa)
-        except PowerCRMErro as erro:
+        except PowerCRMIndisponivel as erro:
             self.falhas_powercrm += 1
             eventos.registrar(self._conn, "alerta",
                               f"Power CRM falhou na cotação: {erro}",
                               self._agora, self._lead)
             return "erro: sistema de cotacao fora do ar"
+        except PowerCRMRecusa as erro:
+            eventos.registrar(self._conn, "alerta",
+                              f"Power CRM recusou a cotação: {erro}",
+                              self._agora, self._lead)
+            return f"erro: cotacao recusada ({erro})"
         self._conn.execute(
             "UPDATE leads SET placa = ?, cotacao_id = ?, plano = ?, "
             "mensalidade = ?, adesao = ? WHERE id = ?",
@@ -92,12 +97,17 @@ class Ferramentas:
             return "erro: nenhuma cotacao feita"
         try:
             cob = self._power.gerar_cobranca(lead["cotacao_id"])
-        except PowerCRMErro as erro:
+        except PowerCRMIndisponivel as erro:
             self.falhas_powercrm += 1
             eventos.registrar(self._conn, "alerta",
                               f"Power CRM falhou na cobrança: {erro}",
                               self._agora, self._lead)
             return "erro: sistema de cobranca fora do ar"
+        except PowerCRMRecusa as erro:
+            eventos.registrar(self._conn, "alerta",
+                              f"Power CRM recusou a cobrança: {erro}",
+                              self._agora, self._lead)
+            return f"erro: cobranca recusada ({erro})"
         self._conn.execute(
             "UPDATE leads SET cobranca_id = ?, boleto_url = ?, "
             "cobranca_enviada_em = ? WHERE id = ?",
@@ -105,8 +115,9 @@ class Ferramentas:
              self._lead),
         )
         self._conn.commit()
-        transicionar(self._conn, self._lead, Status.AGUARDANDO_PAGAMENTO,
-                     self._agora)
+        if status_de(self._conn, self._lead) == Status.NEGOCIANDO:
+            transicionar(self._conn, self._lead, Status.AGUARDANDO_PAGAMENTO,
+                         self._agora)
         eventos.registrar(self._conn, "sistema", "Boleto enviado",
                           self._agora, self._lead)
         return f"cobranca criada: {cob.url_boleto} | pix: {cob.pix_copia_cola}"

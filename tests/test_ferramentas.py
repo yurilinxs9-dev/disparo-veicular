@@ -1,22 +1,23 @@
 # tests/test_ferramentas.py
 from datetime import datetime
 
-import pytest
-
 from disparo.ferramentas import FERRAMENTAS_SPEC, Ferramentas
 from disparo.maquina import Status, status_de, transicionar
-from disparo.powercrm import Cobranca, Cotacao, PowerCRMIndisponivel
+from disparo.powercrm import Cobranca, Cotacao, PowerCRMIndisponivel, PowerCRMRecusa
 
 AGORA = datetime(2026, 8, 7, 11, 0)
 
 
 class PowerFalso:
-    def __init__(self, fora_do_ar=False):
+    def __init__(self, fora_do_ar=False, recusa=False):
         self.fora_do_ar = fora_do_ar
+        self.recusa = recusa
 
     def cotar(self, nome, telefone, placa):
         if self.fora_do_ar:
             raise PowerCRMIndisponivel("503")
+        if self.recusa:
+            raise PowerCRMRecusa(422, "placa invalida")
         return Cotacao("C1", "Master", "189.90", "250.00")
 
     def gerar_cobranca(self, cotacao_id):
@@ -53,6 +54,15 @@ def test_cotar_fora_do_ar_nao_explode(conn, lead):
     assert status_de(conn, lead) == Status.EM_CONVERSA
 
 
+def test_cotar_recusa_nao_conta_como_falha(conn, lead):
+    _em_conversa(conn, lead)
+    f = Ferramentas(conn, PowerFalso(recusa=True), lead, AGORA)
+    saida = f.executar("cotar", {"placa": "ABC1D23"})
+    assert "recusada" in saida
+    assert f.falhas_powercrm == 0
+    assert status_de(conn, lead) == Status.EM_CONVERSA
+
+
 def test_cobranca_exige_cotacao(conn, lead):
     _em_conversa(conn, lead)
     f = Ferramentas(conn, PowerFalso(), lead, AGORA)
@@ -68,6 +78,16 @@ def test_cobranca_grava_e_aguarda(conn, lead):
     linha = conn.execute("SELECT * FROM leads WHERE id = ?", (lead,)).fetchone()
     assert linha["cobranca_id"] == "B1"
     assert linha["cobranca_enviada_em"] == AGORA.isoformat()
+    assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
+
+
+def test_cobranca_dupla_nao_explode(conn, lead):
+    _em_conversa(conn, lead)
+    f = Ferramentas(conn, PowerFalso(), lead, AGORA)
+    f.executar("cotar", {"placa": "ABC1D23"})
+    f.executar("gerar_cobranca", {})
+    saida = f.executar("gerar_cobranca", {})
+    assert "https://p/b1" in saida
     assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
 
 
