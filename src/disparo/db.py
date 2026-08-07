@@ -73,6 +73,21 @@ def conectar(caminho: Path) -> sqlite3.Connection:
     return conn
 
 
+_COLUNAS_ETAPA_2 = (
+    "placa", "cotacao_id", "plano", "mensalidade", "adesao",
+    "cobranca_id", "boleto_url", "cobranca_enviada_em", "lembrete_em",
+)
+
+
+def garantir_colunas(conn: sqlite3.Connection) -> None:
+    existentes = {l["name"] for l in conn.execute("PRAGMA table_info(leads)")}
+    for coluna in _COLUNAS_ETAPA_2:
+        if coluna not in existentes:
+            conn.execute(f"ALTER TABLE leads ADD COLUMN {coluna} TEXT")
+    conn.commit()
+
+
 def criar_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    garantir_colunas(conn)
     conn.commit()

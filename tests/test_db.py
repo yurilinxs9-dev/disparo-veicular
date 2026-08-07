@@ -30,3 +30,16 @@ def test_criar_schema_e_idempotente(tmp_path):
     conn = conectar(tmp_path / "t.db")
     criar_schema(conn)
     criar_schema(conn)  # não pode explodir
+
+
+def test_colunas_da_etapa_2_existem(conn):
+    colunas = {l["name"] for l in conn.execute("PRAGMA table_info(leads)")}
+    assert {"placa", "cotacao_id", "plano", "mensalidade", "adesao",
+            "cobranca_id", "boleto_url", "cobranca_enviada_em",
+            "lembrete_em"} <= colunas
+
+
+def test_garantir_colunas_e_idempotente(conn):
+    from disparo.db import garantir_colunas
+    garantir_colunas(conn)
+    garantir_colunas(conn)  # segunda chamada não pode explodir

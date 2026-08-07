@@ -16,6 +16,12 @@ class Config:
     vendedora_telefone: str
     painel_senha: str
     whisper_modelo: str
+    powercrm_base_url: str
+    powercrm_token: str
+    powercrm_webhook_token: str
+    equipe_telefone: str
+    modelo_triagem: str
+    modelo_fechamento: str
 
 
 def carregar_config(env: Mapping[str, str] | None = None) -> Config:
@@ -39,4 +45,10 @@ def carregar_config(env: Mapping[str, str] | None = None) -> Config:
         vendedora_telefone=e["VENDEDORA_TELEFONE"],
         painel_senha=e["PAINEL_SENHA"],
         whisper_modelo=e.get("WHISPER_MODELO", "small"),
+        powercrm_base_url=e.get("POWERCRM_BASE_URL", "").rstrip("/"),
+        powercrm_token=e.get("POWERCRM_TOKEN", ""),
+        powercrm_webhook_token=e.get("POWERCRM_WEBHOOK_TOKEN", ""),
+        equipe_telefone=e.get("EQUIPE_TELEFONE") or e["VENDEDORA_TELEFONE"],
+        modelo_triagem=e.get("MODELO_TRIAGEM", "claude-haiku-4-5"),
+        modelo_fechamento=e.get("MODELO_FECHAMENTO", "claude-sonnet-5"),
     )
