@@ -21,6 +21,7 @@ def criar_rotas(estado) -> APIRouter:
         tarefas.add_task(
             processar, estado.conn, estado.evo, estado.claude, estado.cfg,
             mensagem, datetime.now(), estado.rng, estado.dormir,
+            getattr(estado, "powercrm", None),
         )
         return {"ok": True}
 

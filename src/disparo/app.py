@@ -19,6 +19,7 @@ from disparo.db import conectar, criar_schema
 from disparo.evolution import Evolution
 from disparo.manutencao import backup, cobrar_pendentes, encerrar_sem_resposta
 from disparo.midia import transcritor_whisper
+from disparo.powercrm import PowerCRM
 
 
 def criar_app(estado) -> FastAPI:
@@ -50,6 +51,9 @@ def montar_estado() -> SimpleNamespace:
         rng=random.SystemRandom(),
         transcritor=transcritor_whisper(cfg.whisper_modelo),
         dormir=time.sleep,
+        powercrm=(PowerCRM(cfg.powercrm_base_url, cfg.powercrm_token,
+                           httpx.Client(timeout=30))
+                  if cfg.powercrm_base_url else None),
     )
 
 

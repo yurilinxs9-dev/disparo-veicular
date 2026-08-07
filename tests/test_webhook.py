@@ -40,6 +40,7 @@ def _estado(conn):
         rng=random.Random(1),
         transcritor=lambda b: "",
         dormir=lambda s: None,
+        powercrm=None,
     )
 
 
@@ -70,3 +71,28 @@ def test_webhook_com_corpo_estranho_nao_quebra(conn):
     estado = _estado(conn)
     cliente = TestClient(criar_app(estado))
     assert cliente.post("/webhook", json={"foo": "bar"}).status_code == 200
+
+
+def test_webhook_repassa_powercrm(conn, lead):
+    conn.execute("UPDATE leads SET status = 'contatado' WHERE id = ?", (lead,))
+    conn.commit()
+    estado = _estado(conn)
+    estado.powercrm = object()  # sentinela: só precisa chegar em processar
+    capturado = {}
+    import disparo.webhook as wh
+    original = wh.processar
+
+    def espiao(*args, **kwargs):
+        capturado["powercrm"] = kwargs.get("powercrm") or args[-1]
+
+    wh.processar = espiao
+    try:
+        cliente = TestClient(criar_app(estado))
+        corpo = {"data": {"key": {"id": "WA-p", "remoteJid":
+                                  "5511988884444@s.whatsapp.net",
+                                  "fromMe": False},
+                          "message": {"conversation": "oi"}}}
+        cliente.post("/webhook", json=corpo)
+    finally:
+        wh.processar = original
+    assert capturado["powercrm"] is estado.powercrm

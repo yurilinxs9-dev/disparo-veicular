@@ -38,11 +38,20 @@ def criar_rotas(estado) -> APIRouter:
     def ler_estado() -> dict:
         hoje = datetime.now().date()
         veredito = disjuntor.avaliar(estado.conn)
+        contagens = dict(estado.conn.execute(
+            "SELECT status, COUNT(*) FROM leads WHERE status IN "
+            "('negociando', 'aguardando_pagamento', 'pago') GROUP BY status"
+        ).fetchall())
         return {
             "pausado": disjuntor.esta_pausado(estado.conn),
             "limite": cota.limite_do_dia(estado.conn, hoje),
             "enviados": cota.enviados_no_dia(estado.conn, hoje),
             "disjuntor": {"ok": veredito.ok, "motivo": veredito.motivo},
+            "funil": {
+                "negociando": contagens.get("negociando", 0),
+                "aguardando_pagamento": contagens.get("aguardando_pagamento", 0),
+                "pagos": contagens.get("pago", 0),
+            },
         }
 
     @rotas.get("/api/leads", dependencies=[Depends(autenticar)])

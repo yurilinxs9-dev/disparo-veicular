@@ -17,6 +17,7 @@ def _estado(conn):
         transcritor=lambda b: "", dormir=lambda s: None,
         cfg=SimpleNamespace(vendedora_telefone="5511900000000",
                             painel_senha="segredo"),
+        powercrm=None,
     )
 
 
@@ -67,6 +68,13 @@ def test_pausar_e_retomar_pela_api(conn):
     assert cliente.get("/api/estado", auth=AUTH).json()["pausado"] is True
     cliente.post("/api/pausar", json={"pausar": False}, auth=AUTH)
     assert cliente.get("/api/estado", auth=AUTH).json()["pausado"] is False
+
+
+def test_estado_traz_funil(conn):
+    cliente = TestClient(criar_app(_estado(conn)))
+    dados = cliente.get("/api/estado", auth=AUTH).json()
+    assert dados["funil"] == {"negociando": 0, "aguardando_pagamento": 0,
+                              "pagos": 0}
 
 
 def test_importar_csv_pela_api(conn):

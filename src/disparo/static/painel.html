@@ -277,6 +277,10 @@
   }
 
   .pill[data-s="quente"] { background: var(--crit-soft); color: var(--crit); border-color: var(--crit); }
+  .pill[data-s="negociando"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .pill[data-s="aguardando_pagamento"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+  .pill[data-s="pago"] { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+  .pill[data-s="escalado"] { background: var(--crit-soft); color: var(--crit); border-color: var(--crit); }
   .pill[data-s="em_conversa"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .pill[data-s="contatado"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
   .pill[data-s="novo"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
@@ -402,6 +406,7 @@
       <span class="eyebrow">Disjuntor</span>
       <span class="gauge-value lamp-ok" id="breakerState">—</span>
       <span class="gauge-note" id="breakerMotivo"></span>
+      <span class="gauge-note" id="funil"></span>
       <span class="gauge-note">
         <label for="csv" style="cursor:pointer;text-decoration:underline">Importar lista CSV</label>
         <input type="file" id="csv" accept=".csv" style="display:none">
@@ -423,6 +428,10 @@
           <option value="contatado">Contatado</option>
           <option value="em_conversa">Em conversa</option>
           <option value="quente">Quente</option>
+          <option value="negociando">Negociando</option>
+          <option value="aguardando_pagamento">Aguardando pagamento</option>
+          <option value="pago">Pago</option>
+          <option value="escalado">Escalado</option>
           <option value="frio">Frio</option>
           <option value="opt_out">Opt-out</option>
           <option value="sem_resposta">Sem resposta</option>
@@ -573,6 +582,11 @@
     breaker.textContent = e.disjuntor.ok ? "OK" : "PAUSA";
     breaker.className = "gauge-value " + (e.disjuntor.ok ? "lamp-ok" : "lamp-crit");
     document.getElementById("breakerMotivo").textContent = e.disjuntor.motivo || "";
+    if (e.funil) {
+      document.getElementById("funil").textContent =
+        `Funil: ${e.funil.negociando} negociando · ` +
+        `${e.funil.aguardando_pagamento} boletos · ${e.funil.pagos} pagos`;
+    }
   }
 
   async function carregarLeads() {
