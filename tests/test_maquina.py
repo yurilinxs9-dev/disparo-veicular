@@ -66,3 +66,27 @@ def test_robo_fala_nas_fases_de_fechamento():
     assert robo_pode_falar(Status.AGUARDANDO_PAGAMENTO) is True
     assert robo_pode_falar(Status.PAGO) is False
     assert robo_pode_falar(Status.ESCALADO) is False
+
+
+def test_quente_nao_alcancavel_apos_negociando(conn, lead):
+    from disparo.maquina import Status, transicionar, TransicaoInvalida
+    from datetime import datetime
+    import pytest
+    agora = datetime(2026, 8, 7, 10, 0)
+    transicionar(conn, lead, Status.CONTATADO, agora)
+    transicionar(conn, lead, Status.EM_CONVERSA, agora)
+    transicionar(conn, lead, Status.NEGOCIANDO, agora)
+    with pytest.raises(TransicaoInvalida):
+        transicionar(conn, lead, Status.QUENTE, agora)
+
+
+def test_aguardando_pagamento_para_escalado(conn, lead):
+    from disparo.maquina import Status, status_de, transicionar
+    from datetime import datetime
+    agora = datetime(2026, 8, 7, 10, 0)
+    transicionar(conn, lead, Status.CONTATADO, agora)
+    transicionar(conn, lead, Status.EM_CONVERSA, agora)
+    transicionar(conn, lead, Status.NEGOCIANDO, agora)
+    transicionar(conn, lead, Status.AGUARDANDO_PAGAMENTO, agora)
+    transicionar(conn, lead, Status.ESCALADO, agora)
+    assert status_de(conn, lead) == Status.ESCALADO

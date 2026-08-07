@@ -31,12 +31,17 @@ _FECHAMENTOS = frozenset({
     Status.DADO_DESATUALIZADO,
 })
 
+_FECHAMENTOS_SEM_QUENTE = frozenset({
+    Status.ESCALADO, Status.FRIO, Status.OPT_OUT,
+    Status.DADO_DESATUALIZADO,
+})
+
 TRANSICOES: dict[Status, frozenset[Status]] = {
     Status.NOVO: frozenset({Status.CONTATADO, Status.INVALIDO}),
     Status.CONTATADO: frozenset({Status.EM_CONVERSA, Status.SEM_RESPOSTA} | _FECHAMENTOS),
     Status.EM_CONVERSA: frozenset({Status.NEGOCIANDO, Status.SEM_RESPOSTA} | _FECHAMENTOS),
-    Status.NEGOCIANDO: frozenset({Status.AGUARDANDO_PAGAMENTO, Status.SEM_RESPOSTA} | _FECHAMENTOS),
-    Status.AGUARDANDO_PAGAMENTO: frozenset({Status.PAGO, Status.SEM_RESPOSTA} | _FECHAMENTOS),
+    Status.NEGOCIANDO: frozenset({Status.AGUARDANDO_PAGAMENTO, Status.SEM_RESPOSTA} | _FECHAMENTOS_SEM_QUENTE),
+    Status.AGUARDANDO_PAGAMENTO: frozenset({Status.PAGO, Status.SEM_RESPOSTA} | _FECHAMENTOS_SEM_QUENTE),
 }
 
 
