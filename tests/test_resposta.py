@@ -10,7 +10,10 @@ from disparo.resposta import processar
 
 RNG = random.Random(3)
 AGORA = datetime(2026, 8, 4, 11, 0)
-CFG = SimpleNamespace(vendedora_telefone="5511900000000")
+CFG = SimpleNamespace(vendedora_telefone="5511900000000",
+                      equipe_telefone="5511900000000",
+                      modelo_triagem="claude-haiku-4-5",
+                      modelo_fechamento="claude-sonnet-5")
 
 
 class EvoFalsa:
@@ -58,14 +61,14 @@ def test_responde_e_vai_para_em_conversa(conn, lead):
     assert evo.digitou
 
 
-def test_lead_quente_avisa_a_vendedora_e_silencia(conn, lead):
+def test_escalar_avisa_a_equipe_e_silencia(conn, lead):
     transicionar(conn, lead, Status.CONTATADO, AGORA)
     evo = EvoFalsa()
-    processar(conn, evo, _claude(_q("quente", "Perfeito, já te mando.")),
+    processar(conn, evo, _claude(_q("escalar", "Vou te passar pra equipe.")),
               CFG, _msg(), AGORA, RNG, dormir=lambda s: None)
     destinos = [d for d, _ in evo.enviados]
     assert "5511900000000" in destinos
-    assert status_de(conn, lead) == Status.QUENTE
+    assert status_de(conn, lead) == Status.ESCALADO
 
 
 def test_opt_out_entra_na_blocklist(conn, lead):
@@ -98,3 +101,60 @@ def test_telefone_desconhecido_e_ignorado(conn):
     evo = EvoFalsa()
     processar(conn, evo, _claude(_q()), CFG, _msg(), AGORA, RNG, dormir=lambda s: None)
     assert evo.enviados == []
+
+
+def test_pausado_grava_mas_nao_responde(conn, lead):
+    from disparo.disjuntor import pausar
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    pausar(conn, "teste", AGORA)
+    evo = EvoFalsa()
+    processar(conn, evo, _claude(_q()), CFG, _msg(), AGORA, RNG,
+              dormir=lambda s: None)
+    assert evo.enviados == []
+    total = conn.execute("SELECT COUNT(*) FROM mensagens").fetchone()[0]
+    assert total == 1  # a entrada foi gravada
+
+
+def test_fase_de_fechamento_usa_sonnet(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    transicionar(conn, lead, Status.EM_CONVERSA, AGORA)
+    transicionar(conn, lead, Status.NEGOCIANDO, AGORA)
+    modelos = []
+
+    def parse(**kw):
+        modelos.append(kw["model"])
+        from types import SimpleNamespace
+        return SimpleNamespace(parsed_output=_q(), content=[])
+
+    cliente = SimpleNamespace(messages=SimpleNamespace(parse=parse))
+    processar(conn, EvoFalsa(), cliente, CFG, _msg(), AGORA, RNG,
+              dormir=lambda s: None)
+    assert modelos == ["claude-sonnet-5"]
+
+
+def test_duas_falhas_do_powercrm_escalam(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    transicionar(conn, lead, Status.EM_CONVERSA, AGORA)
+
+    class PowerQuebrado:
+        def cotar(self, *a):
+            from disparo.powercrm import PowerCRMIndisponivel
+            raise PowerCRMIndisponivel("503")
+
+        def gerar_cobranca(self, *a):
+            from disparo.powercrm import PowerCRMIndisponivel
+            raise PowerCRMIndisponivel("503")
+
+    from types import SimpleNamespace as NS
+    respostas = iter([
+        NS(parsed_output=None, content=[
+            NS(type="tool_use", id="t1", name="cotar", input={"placa": "A"})]),
+        NS(parsed_output=None, content=[
+            NS(type="tool_use", id="t2", name="cotar", input={"placa": "A"})]),
+        NS(parsed_output=_q(), content=[]),
+    ])
+    cliente = NS(messages=NS(parse=lambda **kw: next(respostas)))
+    evo = EvoFalsa()
+    processar(conn, evo, cliente, CFG, _msg(), AGORA, RNG,
+              dormir=lambda s: None, powercrm=PowerQuebrado())
+    assert status_de(conn, lead) == Status.ESCALADO

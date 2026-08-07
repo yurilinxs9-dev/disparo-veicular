@@ -33,7 +33,10 @@ def _estado(conn):
         claude=SimpleNamespace(messages=SimpleNamespace(
             parse=lambda **kw: SimpleNamespace(parsed_output=q))),
         cfg=SimpleNamespace(vendedora_telefone="5511900000000",
-                            painel_senha="segredo"),
+                            equipe_telefone="5511900000000",
+                            painel_senha="segredo",
+                            modelo_triagem="claude-haiku-4-5",
+                            modelo_fechamento="claude-sonnet-5"),
         rng=random.Random(1),
         transcritor=lambda b: "",
         dormir=lambda s: None,

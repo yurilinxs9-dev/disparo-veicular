@@ -7,17 +7,20 @@ import time as _time
 from datetime import datetime
 from typing import Callable
 
-from disparo import blocklist, eventos, handoff, humano
+from disparo import blocklist, disjuntor, eventos, handoff, humano
 from disparo.conversador import TETO_TURNOS, conversar
+from disparo.ferramentas import Ferramentas
 from disparo.maquina import Status, robo_pode_falar, status_de, transicionar
 from disparo.midia import MensagemNormalizada
 
 _DECISAO_PARA_STATUS = {
-    "quente": Status.QUENTE,
     "frio": Status.FRIO,
     "opt_out": Status.OPT_OUT,
     "dado_desatualizado": Status.DADO_DESATUALIZADO,
+    "escalar": Status.ESCALADO,
 }
+
+_FASES_DE_FECHAMENTO = (Status.NEGOCIANDO, Status.AGUARDANDO_PAGAMENTO)
 
 
 def _lead_por_telefone(conn: sqlite3.Connection, telefone: str) -> sqlite3.Row | None:
@@ -37,7 +40,8 @@ def _historico(conn: sqlite3.Connection, lead_id: int) -> list[dict]:
 def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
               mensagem: MensagemNormalizada, agora: datetime,
               rng: random.Random,
-              dormir: Callable[[float], None] = _time.sleep) -> None:
+              dormir: Callable[[float], None] = _time.sleep,
+              powercrm=None) -> None:
     """Trata uma mensagem recebida: grava, responde e atualiza o estado do lead."""
     lead = _lead_por_telefone(conn, mensagem.telefone)
     if lead is None:
@@ -58,6 +62,9 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     if cursor.rowcount == 0:
         return  # webhook repetido
 
+    if disjuntor.esta_pausado(conn):
+        return  # kill switch: mensagem gravada, robô mudo
+
     if mensagem.transcricao_falhou:
         eventos.registrar(
             conn, "alerta",
@@ -68,6 +75,12 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     if status_de(conn, lead["id"]) == Status.CONTATADO:
         transicionar(conn, lead["id"], Status.EM_CONVERSA, agora)
 
+    status_atual = status_de(conn, lead["id"])
+    modelo = (cfg.modelo_fechamento if status_atual in _FASES_DE_FECHAMENTO
+              else cfg.modelo_triagem)
+    ferramentas = (Ferramentas(conn, powercrm, lead["id"], agora)
+                   if powercrm is not None else None)
+
     dormir(humano.atraso_leitura(rng))
     evo.marcar_lida(mensagem.telefone, mensagem.wa_message_id)
 
@@ -76,23 +89,29 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
         historico[-1]["imagem_b64"] = mensagem.imagem_b64
         historico[-1]["media_type"] = mensagem.media_type
 
-    qualificacao = conversar(cliente_claude, dict(lead), historico)
+    qualificacao = conversar(cliente_claude, dict(lead), historico,
+                             ferramentas=ferramentas, modelo=modelo)
 
     turnos = lead["turnos"] + 1
     decisao = qualificacao.decisao
     if turnos >= TETO_TURNOS and decisao == "continuar":
-        decisao = "quente"
+        decisao = "escalar"
+    if ferramentas is not None and ferramentas.falhas_powercrm >= 2:
+        decisao = "escalar"
+    if ferramentas is not None and ferramentas.escalou:
+        decisao = "escalar"
 
     dormir(humano.atraso_resposta(rng))
-    for parte in humano.quebrar(qualificacao.resposta):
-        evo.digitando(mensagem.telefone, humano.duracao_digitando(parte, rng))
-        dormir(humano.duracao_digitando(parte, rng))
-        wa_id = evo.enviar_texto(mensagem.telefone, parte)
-        conn.execute(
-            "INSERT INTO mensagens (lead_id, direcao, tipo, texto, wa_message_id, "
-            "criado_em) VALUES (?, 'saida', 'texto', ?, ?, ?)",
-            (lead["id"], parte, wa_id, agora.isoformat()),
-        )
+    if qualificacao.resposta:
+        for parte in humano.quebrar(qualificacao.resposta):
+            evo.digitando(mensagem.telefone, humano.duracao_digitando(parte, rng))
+            dormir(humano.duracao_digitando(parte, rng))
+            wa_id = evo.enviar_texto(mensagem.telefone, parte)
+            conn.execute(
+                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, wa_message_id, "
+                "criado_em) VALUES (?, 'saida', 'texto', ?, ?, ?)",
+                (lead["id"], parte, wa_id, agora.isoformat()),
+            )
 
     conn.execute(
         "UPDATE leads SET turnos = ?, resumo = ?, paga_hoje = ?, tem_cobertura = ?, "
@@ -110,7 +129,8 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
         )
         return
 
-    transicionar(conn, lead["id"], novo_status, agora)
+    if status_de(conn, lead["id"]) != novo_status:
+        transicionar(conn, lead["id"], novo_status, agora)
 
     if novo_status is Status.OPT_OUT:
         blocklist.bloquear(conn, mensagem.telefone, "opt_out", agora)
@@ -119,9 +139,9 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
             f"{lead['nome']} pediu opt-out — número na blocklist",
             agora, lead["id"],
         )
-    elif novo_status is Status.QUENTE:
-        handoff.avisar_vendedora(
-            conn, evo, cfg.vendedora_telefone, lead, qualificacao, agora
+    elif novo_status is Status.ESCALADO:
+        handoff.avisar_escalada(
+            conn, evo, cfg.equipe_telefone, lead, qualificacao.resumo, agora
         )
     else:
         eventos.registrar(

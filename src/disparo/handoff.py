@@ -29,3 +29,18 @@ def avisar_vendedora(conn: sqlite3.Connection, evo, telefone_vendedora: str,
         f"{lead['nome']} marcado como quente — aviso enviado à vendedora",
         agora, lead["id"],
     )
+
+
+def avisar_escalada(conn: sqlite3.Connection, evo, telefone_equipe: str,
+                    lead: sqlite3.Row, motivo: str, agora: datetime) -> None:
+    fone = lead["telefone_e164"]
+    texto = "\n".join([
+        f"Assumir conversa — {lead['nome']}",
+        f"{lead['veiculo']}",
+        motivo or "a IA escalou a conversa",
+        f"Conversa: wa.me/{fone}",
+    ])
+    evo.enviar_texto(telefone_equipe, texto)
+    eventos.registrar(conn, "alerta",
+                      f"{lead['nome']} escalado para a equipe",
+                      agora, lead["id"])
