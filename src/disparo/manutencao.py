@@ -5,8 +5,11 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from disparo import eventos
+from disparo import eventos, handoff
 from disparo.maquina import Status, transicionar
+
+LEMBRETE = ("Oi {nome}, tudo bem? Só lembrando do boleto da proteção: {boleto}. "
+            "Dá pra pagar pelo PIX no próprio boleto. Qualquer dúvida me chama.")
 
 
 def encerrar_sem_resposta(conn: sqlite3.Connection, agora: datetime,
@@ -24,6 +27,38 @@ def encerrar_sem_resposta(conn: sqlite3.Connection, agora: datetime,
             agora, linha["id"],
         )
     return len(linhas)
+
+
+def cobrar_pendentes(conn: sqlite3.Connection, evo, telefone_equipe: str,
+                     agora: datetime) -> tuple[int, int]:
+    corte_48 = (agora - timedelta(hours=48)).isoformat()
+    corte_72 = (agora - timedelta(hours=72)).isoformat()
+
+    vencidos = conn.execute(
+        "SELECT * FROM leads WHERE status = 'aguardando_pagamento' "
+        "AND cobranca_enviada_em < ?", (corte_72,),
+    ).fetchall()
+    for lead in vencidos:
+        transicionar(conn, lead["id"], Status.ESCALADO, agora)
+        handoff.avisar_escalada(conn, evo, telefone_equipe, lead,
+                                "boleto ha 72h sem pagamento", agora)
+
+    pendentes = conn.execute(
+        "SELECT * FROM leads WHERE status = 'aguardando_pagamento' "
+        "AND cobranca_enviada_em < ? AND lembrete_em IS NULL", (corte_48,),
+    ).fetchall()
+    for lead in pendentes:
+        primeiro_nome = lead["nome"].split()[0]
+        evo.enviar_texto(lead["telefone_e164"], LEMBRETE.format(
+            nome=primeiro_nome, boleto=lead["boleto_url"]))
+        conn.execute("UPDATE leads SET lembrete_em = ? WHERE id = ?",
+                     (agora.isoformat(), lead["id"]))
+        conn.commit()
+        eventos.registrar(conn, "sistema",
+                          f"Lembrete de boleto para {lead['nome']}",
+                          agora, lead["id"])
+
+    return len(pendentes), len(vencidos)
 
 
 def backup(conn: sqlite3.Connection, destino: Path, agora: datetime) -> Path:

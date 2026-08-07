@@ -17,7 +17,7 @@ from disparo.agendador import tentar_disparar
 from disparo.config import carregar_config
 from disparo.db import conectar, criar_schema
 from disparo.evolution import Evolution
-from disparo.manutencao import backup, encerrar_sem_resposta
+from disparo.manutencao import backup, cobrar_pendentes, encerrar_sem_resposta
 from disparo.midia import transcritor_whisper
 
 
@@ -69,6 +69,11 @@ def main() -> FastAPI:
     agenda.add_job(
         lambda: backup(estado.conn, Path("./backups"), datetime.now()),
         "cron", hour=3, id="backup",
+    )
+    agenda.add_job(
+        lambda: cobrar_pendentes(estado.conn, estado.evo,
+                                 estado.cfg.equipe_telefone, datetime.now()),
+        "interval", hours=1, id="cobranca_pendente",
     )
     agenda.start()
     return app
