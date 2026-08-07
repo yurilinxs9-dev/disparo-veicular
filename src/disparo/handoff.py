@@ -44,3 +44,19 @@ def avisar_escalada(conn: sqlite3.Connection, evo, telefone_equipe: str,
     eventos.registrar(conn, "alerta",
                       f"{lead['nome']} escalado para a equipe",
                       agora, lead["id"])
+
+
+def avisar_vistoria(conn: sqlite3.Connection, evo, telefone_equipe: str,
+                    lead: sqlite3.Row, agora: datetime) -> None:
+    fone = lead["telefone_e164"]
+    texto = "\n".join([
+        f"VENDA PAGA — {lead['nome']}",
+        f"{lead['veiculo']} — placa {lead['placa'] or '?'}",
+        f"Plano {lead['plano'] or '?'} · R$ {lead['mensalidade'] or '?'}/mês",
+        "Agendar vistoria.",
+        f"Conversa: wa.me/{fone}",
+    ])
+    evo.enviar_texto(telefone_equipe, texto)
+    eventos.registrar(conn, "quente",
+                      f"{lead['nome']} pagou — vistoria pendente",
+                      agora, lead["id"])
