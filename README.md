@@ -31,6 +31,21 @@ definir_inicio(conectar(carregar_config().db), date.today())"
 
 4. Importe a primeira lista pelo painel.
 
+## Venda autônoma (Etapa 2)
+
+Com `POWERCRM_BASE_URL` e `POWERCRM_TOKEN` no `.env`, a IA cota pela placa,
+apresenta o preço de tabela, gera o boleto (pagável por PIX) e, pago, avisa a
+equipe para agendar a vistoria. Sem essas variáveis o serviço opera no modo
+da Etapa 1 (qualifica e escala para humano).
+
+Configurar no Power CRM (Minha Empresa → Integrações):
+1. Power API: gerar o token e colocar em `POWERCRM_TOKEN`.
+2. Power Webhook: URL `https://seu-dominio/webhook/powercrm`, token igual ao
+   `POWERCRM_WEBHOOK_TOKEN`, evento de pagamento confirmado.
+
+Regras fixas: preço de tabela sem desconto; cobrança só após aceite explícito;
+lembrete único de boleto em 48h; sem pagamento em 72h a equipe assume.
+
 ## Rodar os testes
 
 ```bash
