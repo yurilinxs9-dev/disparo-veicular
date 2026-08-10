@@ -31,7 +31,8 @@ def _estado(conn):
         conn=conn,
         evo=EvoFalsa(),
         claude=SimpleNamespace(messages=SimpleNamespace(
-            parse=lambda **kw: SimpleNamespace(parsed_output=q))),
+            create=lambda **kw: SimpleNamespace(content=[SimpleNamespace(
+                type="text", text=q.model_dump_json())]))),
         cfg=SimpleNamespace(vendedora_telefone="5511900000000",
                             equipe_telefone="5511900000000",
                             painel_senha="segredo",

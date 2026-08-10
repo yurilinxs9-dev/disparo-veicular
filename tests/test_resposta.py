@@ -33,10 +33,15 @@ class EvoFalsa:
         self.digitou.append(segundos)
 
 
+def _resposta_final(qualificacao: Qualificacao):
+    return SimpleNamespace(content=[SimpleNamespace(
+        type="text", text=qualificacao.model_dump_json())])
+
+
 def _claude(qualificacao: Qualificacao):
     return SimpleNamespace(
         messages=SimpleNamespace(
-            parse=lambda **kw: SimpleNamespace(parsed_output=qualificacao)
+            create=lambda **kw: _resposta_final(qualificacao)
         )
     )
 
@@ -139,12 +144,11 @@ def test_fase_de_fechamento_usa_sonnet(conn, lead):
     transicionar(conn, lead, Status.NEGOCIANDO, AGORA)
     modelos = []
 
-    def parse(**kw):
+    def create(**kw):
         modelos.append(kw["model"])
-        from types import SimpleNamespace
-        return SimpleNamespace(parsed_output=_q(), content=[])
+        return _resposta_final(_q())
 
-    cliente = SimpleNamespace(messages=SimpleNamespace(parse=parse))
+    cliente = SimpleNamespace(messages=SimpleNamespace(create=create))
     processar(conn, EvoFalsa(), cliente, CFG, _msg(), AGORA, RNG,
               dormir=lambda s: None)
     assert modelos == ["claude-sonnet-5"]
@@ -161,13 +165,13 @@ def test_duas_falhas_do_powercrm_escalam(conn, lead):
 
     from types import SimpleNamespace as NS
     respostas = iter([
-        NS(parsed_output=None, content=[
+        NS(content=[
             NS(type="tool_use", id="t1", name="cotar", input={"placa": "A"})]),
-        NS(parsed_output=None, content=[
+        NS(content=[
             NS(type="tool_use", id="t2", name="cotar", input={"placa": "A"})]),
-        NS(parsed_output=_q(), content=[]),
+        _resposta_final(_q()),
     ])
-    cliente = NS(messages=NS(parse=lambda **kw: next(respostas)))
+    cliente = NS(messages=NS(create=lambda **kw: next(respostas)))
     evo = EvoFalsa()
     processar(conn, evo, cliente, CFG, _msg(), AGORA, RNG,
               dormir=lambda s: None, powercrm=PowerQuebrado())
@@ -185,13 +189,13 @@ def test_falhas_powercrm_nao_sobrescreve_opt_out(conn, lead):
 
     from types import SimpleNamespace as NS
     respostas = iter([
-        NS(parsed_output=None, content=[
+        NS(content=[
             NS(type="tool_use", id="t1", name="cotar", input={"placa": "A"})]),
-        NS(parsed_output=None, content=[
+        NS(content=[
             NS(type="tool_use", id="t2", name="cotar", input={"placa": "A"})]),
-        NS(parsed_output=_q("opt_out", "Para de mandar mensagem."), content=[]),
+        _resposta_final(_q("opt_out", "Para de mandar mensagem.")),
     ])
-    cliente = NS(messages=NS(parse=lambda **kw: next(respostas)))
+    cliente = NS(messages=NS(create=lambda **kw: next(respostas)))
     evo = EvoFalsa()
     processar(conn, evo, cliente, CFG, _msg("para de mandar"), AGORA, RNG,
               dormir=lambda s: None, powercrm=PowerQuebrado())
@@ -211,15 +215,14 @@ def test_fechamento_avisa_equipe(conn, lead):
 
     from types import SimpleNamespace as NS
     respostas = iter([
-        NS(parsed_output=None, content=[
+        NS(content=[
             NS(type="tool_use", id="t1", name="cotar",
                input={"placa": "ABC1D23"})]),
-        NS(parsed_output=None, content=[
+        NS(content=[
             NS(type="tool_use", id="t2", name="fechar_venda", input={})]),
-        NS(parsed_output=_q(resposta="Fechado, o boleto chega em instantes."),
-           content=[]),
+        _resposta_final(_q(resposta="Fechado, o boleto chega em instantes.")),
     ])
-    cliente = NS(messages=NS(parse=lambda **kw: next(respostas)))
+    cliente = NS(messages=NS(create=lambda **kw: next(respostas)))
     evo = EvoFalsa()
     processar(conn, evo, cliente, CFG, _msg("fecho sim"), AGORA, RNG,
               dormir=lambda s: None, powercrm=PowerOk())

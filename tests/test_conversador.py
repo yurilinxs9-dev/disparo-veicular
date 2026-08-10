@@ -13,11 +13,12 @@ class ClienteFalso:
     def __init__(self, resultado: Qualificacao):
         self.resultado = resultado
         self.chamada: dict | None = None
-        self.messages = SimpleNamespace(parse=self._parse)
+        self.messages = SimpleNamespace(create=self._create)
 
-    def _parse(self, **kwargs):
+    def _create(self, **kwargs):
         self.chamada = kwargs
-        return SimpleNamespace(parsed_output=self.resultado)
+        return SimpleNamespace(content=[SimpleNamespace(
+            type="text", text=self.resultado.model_dump_json())])
 
 
 LEAD = {"nome": "Joao", "veiculo": "Onix 2019", "turnos": 2}
@@ -44,7 +45,9 @@ def test_conversar_usa_o_modelo_certo_e_cacheia_o_prompt():
     chamada = cliente.chamada
     assert chamada["model"] == "claude-haiku-4-5"
     assert chamada["system"][0]["cache_control"] == {"type": "ephemeral"}
-    assert chamada["output_format"] is Qualificacao
+    esquema = chamada["output_config"]["format"]["schema"]
+    assert esquema["additionalProperties"] is False
+    assert set(esquema["required"]) == set(esquema["properties"].keys())
 
 
 def test_historico_vira_papeis_alternados():
@@ -101,15 +104,16 @@ def test_laco_executa_ferramenta_e_volta():
     q = Qualificacao(resposta="Fica R$ 189,90 por mês.", decisao="continuar",
                      resumo="cotado")
     respostas = iter([
-        SimpleNamespace(  # 1a chamada: modelo pede a ferramenta
-            parsed_output=None,
-            content=[SimpleNamespace(type="tool_use", id="t1", name="cotar",
+        SimpleNamespace(  # 1a chamada: modelo pede a ferramenta (com texto solto)
+            content=[SimpleNamespace(type="text", text="Vou cotar."),
+                     SimpleNamespace(type="tool_use", id="t1", name="cotar",
                                      input={"placa": "ABC1D23"})],
         ),
-        SimpleNamespace(parsed_output=q, content=[]),  # 2a: saída final
+        SimpleNamespace(content=[SimpleNamespace(  # 2a: saída final
+            type="text", text=q.model_dump_json())]),
     ])
     cliente = SimpleNamespace(messages=SimpleNamespace(
-        parse=lambda **kw: next(respostas)))
+        create=lambda **kw: next(respostas)))
     lead = {"nome": "Joao", "veiculo": "Onix 2019"}
     resultado = conversar(cliente, lead, [
         {"direcao": "entrada", "texto": "pode cotar, placa ABC1D23"},
@@ -124,12 +128,25 @@ def test_sem_ferramentas_nao_manda_tools():
     from disparo.conversador import Qualificacao, conversar
     capturado = {}
 
-    def parse(**kw):
+    def create(**kw):
         capturado.update(kw)
-        return SimpleNamespace(parsed_output=Qualificacao(
-            resposta="oi", decisao="continuar", resumo="r"), content=[])
+        return SimpleNamespace(content=[SimpleNamespace(
+            type="text", text=Qualificacao(
+                resposta="oi", decisao="continuar", resumo="r").model_dump_json())])
 
-    cliente = SimpleNamespace(messages=SimpleNamespace(parse=parse))
+    cliente = SimpleNamespace(messages=SimpleNamespace(create=create))
     conversar(cliente, {"nome": "J", "veiculo": "Onix"},
               [{"direcao": "entrada", "texto": "oi"}])
     assert "tools" not in capturado or not capturado["tools"]
+
+
+def test_texto_fora_do_esquema_vira_escalada():
+    from types import SimpleNamespace
+    from disparo.conversador import conversar
+    cliente = SimpleNamespace(messages=SimpleNamespace(
+        create=lambda **kw: SimpleNamespace(content=[SimpleNamespace(
+            type="text", text="nao e json")])))
+    r = conversar(cliente, {"nome": "J", "veiculo": "Onix"},
+                  [{"direcao": "entrada", "texto": "oi"}])
+    assert r.decisao == "escalar"
+    assert r.resposta == ""

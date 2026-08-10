@@ -83,6 +83,26 @@ class Qualificacao(BaseModel):
     carro_quitado: Literal["quitado", "financiado", "nao_informado"] = "nao_informado"
 
 
+# Schema estrito pra saída estruturada da API (additionalProperties false e
+# todos os campos obrigatórios — exigência do output_config.format).
+ESQUEMA_QUALIFICACAO = {
+    "type": "object",
+    "properties": {
+        "resposta": {"type": "string"},
+        "decisao": {"type": "string", "enum": [
+            "continuar", "frio", "opt_out", "dado_desatualizado", "escalar"]},
+        "resumo": {"type": "string"},
+        "paga_hoje": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "tem_cobertura": {"type": "string", "enum": ["sim", "nao", "nao_informado"]},
+        "carro_quitado": {"type": "string", "enum": [
+            "quitado", "financiado", "nao_informado"]},
+    },
+    "required": ["resposta", "decisao", "resumo", "paga_hoje",
+                 "tem_cobertura", "carro_quitado"],
+    "additionalProperties": False,
+}
+
+
 def abertura(nome: str, rng: random.Random) -> str:
     return rng.choice(ABERTURAS).format(nome=nome)
 
@@ -118,7 +138,7 @@ def conversar(cliente: Any, lead: dict, historico: list[dict],
         extras["tools"] = FERRAMENTAS_SPEC
 
     for _ in range(4):
-        resposta = cliente.messages.parse(
+        resposta = cliente.messages.create(
             model=modelo,
             max_tokens=1024,
             system=[{
@@ -127,14 +147,18 @@ def conversar(cliente: Any, lead: dict, historico: list[dict],
                 "cache_control": {"type": "ephemeral"},
             }],
             messages=mensagens,
-            output_format=Qualificacao,
+            output_config={"format": {"type": "json_schema",
+                                      "schema": ESQUEMA_QUALIFICACAO}},
             **extras,
         )
-        usos = [b for b in getattr(resposta, "content", [])
-                if getattr(b, "type", "") == "tool_use"]
+        blocos = getattr(resposta, "content", [])
+        usos = [b for b in blocos if getattr(b, "type", "") == "tool_use"]
         if not usos or ferramentas is None:
             break
-        mensagens.append({"role": "assistant", "content": [
+        # replay do turno do assistente: texto (se houver) + tool_use
+        eco = [{"type": "text", "text": b.text} for b in blocos
+               if getattr(b, "type", "") == "text" and b.text.strip()]
+        mensagens.append({"role": "assistant", "content": eco + [
             {"type": "tool_use", "id": u.id, "name": u.name, "input": u.input}
             for u in usos
         ]})
@@ -144,7 +168,10 @@ def conversar(cliente: Any, lead: dict, historico: list[dict],
             for u in usos
         ]})
 
-    if resposta.parsed_output is None:
+    texto = next((b.text for b in getattr(resposta, "content", [])
+                  if getattr(b, "type", "") == "text"), "")
+    try:
+        return Qualificacao.model_validate_json(texto)
+    except Exception:
         return Qualificacao(resposta="", decisao="escalar",
                             resumo="modelo não devolveu saída estruturada")
-    return resposta.parsed_output
