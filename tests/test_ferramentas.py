@@ -28,7 +28,7 @@ def _em_conversa(conn, lead):
 
 def test_spec_tem_as_tres_ferramentas():
     assert {f["name"] for f in FERRAMENTAS_SPEC} == {
-        "cotar", "gerar_cobranca", "escalar_humano"}
+        "cotar", "fechar_venda", "escalar_humano"}
 
 
 def test_cotar_grava_e_negocia(conn, lead):
@@ -67,3 +67,32 @@ def test_escalar(conn, lead):
     f.executar("escalar_humano", {"motivo": "pediu desconto"})
     assert f.escalou is True
     assert status_de(conn, lead) == Status.ESCALADO
+
+
+def test_fechar_venda_exige_cotacao(conn, lead):
+    _em_conversa(conn, lead)
+    f = Ferramentas(conn, PowerFalso(), lead, AGORA)
+    assert f.executar("fechar_venda", {}).startswith("erro:")
+    assert f.fechou is False
+
+
+def test_fechar_venda_aguarda_pagamento_e_marca_flag(conn, lead):
+    _em_conversa(conn, lead)
+    f = Ferramentas(conn, PowerFalso(), lead, AGORA)
+    f.executar("cotar", {"placa": "ABC1D23"})
+    saida = f.executar("fechar_venda", {})
+    assert "equipe" in saida
+    assert f.fechou is True
+    linha = conn.execute("SELECT * FROM leads WHERE id = ?", (lead,)).fetchone()
+    assert linha["cobranca_enviada_em"] == AGORA.isoformat()
+    assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
+
+
+def test_fechar_venda_dupla_nao_explode(conn, lead):
+    _em_conversa(conn, lead)
+    f = Ferramentas(conn, PowerFalso(), lead, AGORA)
+    f.executar("cotar", {"placa": "ABC1D23"})
+    f.executar("fechar_venda", {})
+    saida = f.executar("fechar_venda", {})
+    assert "ja registrada" in saida
+    assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO

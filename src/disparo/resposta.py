@@ -123,6 +123,12 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     )
     conn.commit()
 
+    if ferramentas is not None and ferramentas.fechou:
+        handoff.avisar_fechamento(
+            conn, evo, cfg.equipe_telefone,
+            _lead_por_telefone(conn, mensagem.telefone), agora,
+        )
+
     novo_status = _DECISAO_PARA_STATUS.get(decisao)
     if novo_status is None:
         eventos.registrar(

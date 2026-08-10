@@ -20,9 +20,10 @@ FERRAMENTAS_SPEC = [
         },
     },
     {
-        "name": "gerar_cobranca",
-        "description": "Gera o boleto (pagável por PIX) da adesão. Use SOMENTE "
-                       "depois de o cliente aceitar explicitamente o valor.",
+        "name": "fechar_venda",
+        "description": "Registra o aceite da venda e aciona a equipe pra gerar "
+                       "e enviar o boleto (pagável por PIX). Use SOMENTE depois "
+                       "de o cliente aceitar explicitamente o valor.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -46,13 +47,14 @@ class Ferramentas:
         self._lead = lead_id
         self._agora = agora
         self.escalou = False
+        self.fechou = False
         self.falhas_powercrm = 0
 
     def executar(self, nome: str, entrada: dict) -> str:
         if nome == "cotar":
             return self._cotar(entrada.get("placa", ""))
-        if nome == "gerar_cobranca":
-            return self._gerar_cobranca()
+        if nome == "fechar_venda":
+            return self._fechar_venda()
         if nome == "escalar_humano":
             return self._escalar(entrada.get("motivo", "sem motivo"))
         return f"erro: ferramenta desconhecida {nome}"
@@ -91,38 +93,25 @@ class Ferramentas:
         return (f"plano {cot.plano}: mensalidade R$ {cot.mensalidade}, "
                 f"adesao R$ {cot.adesao}")
 
-    def _gerar_cobranca(self) -> str:
+    def _fechar_venda(self) -> str:
         lead = self._linha()
-        if lead["cobranca_id"]:
-            return f"cobranca ja criada: {lead['boleto_url']}"
         if not lead["cotacao_id"]:
             return "erro: nenhuma cotacao feita"
-        try:
-            cob = self._power.gerar_cobranca(lead["cotacao_id"])
-        except PowerCRMIndisponivel as erro:
-            self.falhas_powercrm += 1
-            eventos.registrar(self._conn, "alerta",
-                              f"Power CRM falhou na cobrança: {erro}",
-                              self._agora, self._lead)
-            return "erro: sistema de cobranca fora do ar"
-        except PowerCRMRecusa as erro:
-            eventos.registrar(self._conn, "alerta",
-                              f"Power CRM recusou a cobrança: {erro}",
-                              self._agora, self._lead)
-            return f"erro: cobranca recusada ({erro})"
+        if status_de(self._conn, self._lead) == Status.AGUARDANDO_PAGAMENTO:
+            return "venda ja registrada: a equipe esta cuidando do boleto"
+        transicionar(self._conn, self._lead, Status.AGUARDANDO_PAGAMENTO,
+                     self._agora)
         self._conn.execute(
-            "UPDATE leads SET cobranca_id = ?, boleto_url = ?, "
-            "cobranca_enviada_em = ? WHERE id = ?",
-            (cob.cobranca_id, cob.url_boleto, self._agora.isoformat(),
-             self._lead),
+            "UPDATE leads SET cobranca_enviada_em = ? WHERE id = ?",
+            (self._agora.isoformat(), self._lead),
         )
         self._conn.commit()
-        if status_de(self._conn, self._lead) == Status.NEGOCIANDO:
-            transicionar(self._conn, self._lead, Status.AGUARDANDO_PAGAMENTO,
-                         self._agora)
-        eventos.registrar(self._conn, "sistema", "Boleto enviado",
+        eventos.registrar(self._conn, "sistema",
+                          "Venda fechada — boleto com a equipe",
                           self._agora, self._lead)
-        return f"cobranca criada: {cob.url_boleto} | pix: {cob.pix_copia_cola}"
+        self.fechou = True
+        return ("venda registrada: a equipe vai gerar o boleto e enviar "
+                "aqui na conversa em instantes")
 
     def _escalar(self, motivo: str) -> str:
         transicionar(self._conn, self._lead, Status.ESCALADO, self._agora)

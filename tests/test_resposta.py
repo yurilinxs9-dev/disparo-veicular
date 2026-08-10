@@ -141,10 +141,6 @@ def test_duas_falhas_do_powercrm_escalam(conn, lead):
             from disparo.powercrm import PowerCRMIndisponivel
             raise PowerCRMIndisponivel("503")
 
-        def gerar_cobranca(self, *a):
-            from disparo.powercrm import PowerCRMIndisponivel
-            raise PowerCRMIndisponivel("503")
-
     from types import SimpleNamespace as NS
     respostas = iter([
         NS(parsed_output=None, content=[
@@ -169,10 +165,6 @@ def test_falhas_powercrm_nao_sobrescreve_opt_out(conn, lead):
             from disparo.powercrm import PowerCRMIndisponivel
             raise PowerCRMIndisponivel("503")
 
-        def gerar_cobranca(self, *a):
-            from disparo.powercrm import PowerCRMIndisponivel
-            raise PowerCRMIndisponivel("503")
-
     from types import SimpleNamespace as NS
     respostas = iter([
         NS(parsed_output=None, content=[
@@ -187,3 +179,34 @@ def test_falhas_powercrm_nao_sobrescreve_opt_out(conn, lead):
               dormir=lambda s: None, powercrm=PowerQuebrado())
     assert status_de(conn, lead) == Status.OPT_OUT
     assert esta_bloqueado(conn, "5511988884444") is True
+
+
+def test_fechamento_avisa_equipe(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    transicionar(conn, lead, Status.EM_CONVERSA, AGORA)
+
+    from disparo.powercrm import Cotacao
+
+    class PowerOk:
+        def cotar(self, nome, telefone, placa):
+            return Cotacao("QTN-1", "NEG-1", "Master", "189,90", "250,00")
+
+    from types import SimpleNamespace as NS
+    respostas = iter([
+        NS(parsed_output=None, content=[
+            NS(type="tool_use", id="t1", name="cotar",
+               input={"placa": "ABC1D23"})]),
+        NS(parsed_output=None, content=[
+            NS(type="tool_use", id="t2", name="fechar_venda", input={})]),
+        NS(parsed_output=_q(resposta="Fechado, o boleto chega em instantes."),
+           content=[]),
+    ])
+    cliente = NS(messages=NS(parse=lambda **kw: next(respostas)))
+    evo = EvoFalsa()
+    processar(conn, evo, cliente, CFG, _msg("fecho sim"), AGORA, RNG,
+              dormir=lambda s: None, powercrm=PowerOk())
+    assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
+    texto_equipe = next(
+        t for d, t in evo.enviados if d == CFG.equipe_telefone)
+    assert "VENDA FECHADA" in texto_equipe
+    assert "QTN-1" in texto_equipe

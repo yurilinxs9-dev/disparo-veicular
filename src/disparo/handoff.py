@@ -46,6 +46,24 @@ def avisar_escalada(conn: sqlite3.Connection, evo, telefone_equipe: str,
                       agora, lead["id"])
 
 
+def avisar_fechamento(conn: sqlite3.Connection, evo, telefone_equipe: str,
+                      lead: sqlite3.Row, agora: datetime) -> None:
+    fone = lead["telefone_e164"]
+    texto = "\n".join([
+        f"VENDA FECHADA — {lead['nome']}",
+        f"{lead['veiculo']} — placa {lead['placa'] or '?'}",
+        f"Plano {lead['plano'] or '?'} · R$ {lead['mensalidade'] or '?'}/mês "
+        f"· adesão R$ {lead['adesao'] or '?'}",
+        f"Gerar o boleto no Power CRM (cotação {lead['cotacao_id']}) "
+        "e enviar pro cliente.",
+        f"Conversa: wa.me/{fone}",
+    ])
+    evo.enviar_texto(telefone_equipe, texto)
+    eventos.registrar(conn, "quente",
+                      f"{lead['nome']} fechou — boleto com a equipe",
+                      agora, lead["id"])
+
+
 def avisar_vistoria(conn: sqlite3.Connection, evo, telefone_equipe: str,
                     lead: sqlite3.Row, agora: datetime) -> None:
     fone = lead["telefone_e164"]
