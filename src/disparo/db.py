@@ -74,7 +74,7 @@ def conectar(caminho: Path) -> sqlite3.Connection:
 
 
 _COLUNAS_ETAPA_2 = (
-    "placa", "cotacao_id", "plano", "mensalidade", "adesao",
+    "placa", "cotacao_id", "negociacao_id", "plano", "mensalidade", "adesao",
     "cobranca_id", "boleto_url", "cobranca_enviada_em", "lembrete_em",
 )
 

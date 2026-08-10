@@ -77,10 +77,10 @@ class Ferramentas:
                               self._agora, self._lead)
             return f"erro: cotacao recusada ({erro})"
         self._conn.execute(
-            "UPDATE leads SET placa = ?, cotacao_id = ?, plano = ?, "
-            "mensalidade = ?, adesao = ? WHERE id = ?",
-            (placa, cot.cotacao_id, cot.plano, cot.mensalidade, cot.adesao,
-             self._lead),
+            "UPDATE leads SET placa = ?, cotacao_id = ?, negociacao_id = ?, "
+            "plano = ?, mensalidade = ?, adesao = ? WHERE id = ?",
+            (placa, cot.cotacao_id, cot.negociacao_id, cot.plano,
+             cot.mensalidade, cot.adesao, self._lead),
         )
         self._conn.commit()
         if status_de(self._conn, self._lead) == Status.EM_CONVERSA:
