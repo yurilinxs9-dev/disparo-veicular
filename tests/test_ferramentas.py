@@ -96,3 +96,14 @@ def test_fechar_venda_dupla_nao_explode(conn, lead):
     saida = f.executar("fechar_venda", {})
     assert "ja registrada" in saida
     assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
+
+
+def test_fechar_venda_apos_escalar_nao_explode(conn, lead):
+    _em_conversa(conn, lead)
+    f = Ferramentas(conn, PowerFalso(), lead, AGORA)
+    f.executar("cotar", {"placa": "ABC1D23"})
+    f.executar("escalar_humano", {"motivo": "pediu desconto"})
+    saida = f.executar("fechar_venda", {})
+    assert saida.startswith("erro:")
+    assert f.fechou is False
+    assert status_de(conn, lead) == Status.ESCALADO

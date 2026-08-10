@@ -27,9 +27,20 @@ class EvoFalsa:
         pass
 
 
-def _estado(conn):
+class EvoQueFalha:
+    def enviar_texto(self, telefone, texto):
+        raise RuntimeError("evolution fora do ar")
+
+    def marcar_lida(self, *a):
+        pass
+
+    def digitando(self, *a):
+        pass
+
+
+def _estado(conn, evo=None):
     return SimpleNamespace(
-        conn=conn, evo=EvoFalsa(), claude=None, rng=random.Random(1),
+        conn=conn, evo=evo or EvoFalsa(), claude=None, rng=random.Random(1),
         transcritor=lambda b: "", dormir=lambda s: None, powercrm=None,
         cfg=SimpleNamespace(vendedora_telefone="5511900000000",
                             equipe_telefone="5537999990000",
@@ -173,3 +184,16 @@ def test_data_como_lista_devolve_200_sem_efeito(conn, lead):
     assert r.status_code == 200
     assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
     assert estado.evo.enviados == []
+
+
+def test_evolution_fora_do_ar_ainda_devolve_200_e_registra_alerta(conn, lead):
+    _aguardando(conn, lead)
+    estado = _estado(conn, evo=EvoQueFalha())
+    cliente = TestClient(criar_app(estado))
+    r = cliente.post("/webhook/powercrm", headers=CABECALHO,
+                     json=_evento("payment.slip.paid"))
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+    linha = conn.execute(
+        "SELECT COUNT(*) AS n FROM eventos WHERE tipo = 'alerta'").fetchone()
+    assert linha["n"] == 1

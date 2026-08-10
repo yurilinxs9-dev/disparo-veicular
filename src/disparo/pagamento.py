@@ -41,58 +41,74 @@ def criar_rotas(estado) -> APIRouter:
             return {"ok": True}
         if not isinstance(corpo, dict):
             return {"ok": True}
-        tipo = str(corpo.get("type", ""))
+
         dados = corpo.get("data")
-        if not isinstance(dados, dict):
-            dados = {}
-        codigo = str(dados.get("quotationCode") or "")
-        if not codigo:
-            return {"ok": True}
-        lead = estado.conn.execute(
-            "SELECT * FROM leads WHERE cotacao_id = ?", (codigo,)).fetchone()
-        if lead is None:
-            return {"ok": True}
+        codigo = str(dados.get("quotationCode") or "") if isinstance(dados, dict) else ""
 
-        agora = datetime.now()
-        status_atual = status_de(estado.conn, lead["id"])
-
-        if tipo == "payment.slip.generated":
-            if status_atual == Status.AGUARDANDO_PAGAMENTO:
-                estado.conn.execute(
-                    "UPDATE leads SET cobranca_enviada_em = ?, "
-                    "lembrete_em = NULL WHERE id = ?",
-                    (agora.isoformat(), lead["id"]),
-                )
-                estado.conn.commit()
-                eventos.registrar(estado.conn, "sistema",
-                                  "Boleto gerado no Power CRM", agora,
-                                  lead["id"])
-            return {"ok": True}
-
-        if not _pago(tipo):
-            return {"ok": True}
-
-        if status_atual != Status.AGUARDANDO_PAGAMENTO:
-            if status_atual != Status.PAGO:
-                eventos.registrar(
-                    estado.conn, "alerta",
-                    f"pagamento recebido de {lead['nome']} apos escalada — "
-                    f"conferir cotacao {codigo}",
-                    agora, lead["id"],
-                )
-                estado.evo.enviar_texto(
-                    estado.cfg.equipe_telefone,
-                    f"Pagamento recebido de {lead['nome']} depois da escalada. "
-                    f"Confere a cotação {codigo} no Power CRM.",
-                )
-            return {"ok": True}  # repetido, fora de ordem ou pós-escalada
-
-        transicionar(estado.conn, lead["id"], Status.PAGO, agora)
-        estado.evo.enviar_texto(
-            lead["telefone_e164"],
-            BOAS_VINDAS.format(nome=primeiro_nome(lead["nome"])))
-        handoff.avisar_vistoria(estado.conn, estado.evo,
-                                estado.cfg.equipe_telefone, lead, agora)
+        # a partir daqui pode chamar a Evolution: qualquer falha (rede, 4xx/5xx
+        # do WhatsApp, bug) precisa virar alerta e NUNCA um 500 pro Power CRM
+        try:
+            _processar(estado, corpo, dados if isinstance(dados, dict) else {})
+        except Exception as erro:
+            eventos.registrar(
+                estado.conn, "alerta",
+                f"erro processando webhook powercrm"
+                f"{f' (cotacao {codigo})' if codigo else ''}: {erro}",
+                datetime.now(),
+            )
         return {"ok": True}
 
     return rotas
+
+
+def _processar(estado, corpo: dict, dados: dict) -> None:
+    """Processa o corpo já validado do webhook (auth ok, corpo é dict)."""
+    tipo = str(corpo.get("type", ""))
+    codigo = str(dados.get("quotationCode") or "")
+    if not codigo:
+        return
+    lead = estado.conn.execute(
+        "SELECT * FROM leads WHERE cotacao_id = ?", (codigo,)).fetchone()
+    if lead is None:
+        return
+
+    agora = datetime.now()
+    status_atual = status_de(estado.conn, lead["id"])
+
+    if tipo == "payment.slip.generated":
+        if status_atual == Status.AGUARDANDO_PAGAMENTO:
+            estado.conn.execute(
+                "UPDATE leads SET cobranca_enviada_em = ?, "
+                "lembrete_em = NULL WHERE id = ?",
+                (agora.isoformat(), lead["id"]),
+            )
+            estado.conn.commit()
+            eventos.registrar(estado.conn, "sistema",
+                              "Boleto gerado no Power CRM", agora,
+                              lead["id"])
+        return
+
+    if not _pago(tipo):
+        return
+
+    if status_atual != Status.AGUARDANDO_PAGAMENTO:
+        if status_atual != Status.PAGO:
+            eventos.registrar(
+                estado.conn, "alerta",
+                f"pagamento recebido de {lead['nome']} apos escalada — "
+                f"conferir cotacao {codigo}",
+                agora, lead["id"],
+            )
+            estado.evo.enviar_texto(
+                estado.cfg.equipe_telefone,
+                f"Pagamento recebido de {lead['nome']} depois da escalada. "
+                f"Confere a cotação {codigo} no Power CRM.",
+            )
+        return  # repetido, fora de ordem ou pós-escalada
+
+    transicionar(estado.conn, lead["id"], Status.PAGO, agora)
+    estado.evo.enviar_texto(
+        lead["telefone_e164"],
+        BOAS_VINDAS.format(nome=primeiro_nome(lead["nome"])))
+    handoff.avisar_vistoria(estado.conn, estado.evo,
+                            estado.cfg.equipe_telefone, lead, agora)

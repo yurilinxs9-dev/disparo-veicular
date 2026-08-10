@@ -97,8 +97,11 @@ class Ferramentas:
         lead = self._linha()
         if not lead["cotacao_id"]:
             return "erro: nenhuma cotacao feita"
-        if status_de(self._conn, self._lead) == Status.AGUARDANDO_PAGAMENTO:
+        status_atual = status_de(self._conn, self._lead)
+        if status_atual == Status.AGUARDANDO_PAGAMENTO:
             return "venda ja registrada: a equipe esta cuidando do boleto"
+        if status_atual != Status.NEGOCIANDO:
+            return "erro: venda nao esta em negociacao"
         transicionar(self._conn, self._lead, Status.AGUARDANDO_PAGAMENTO,
                      self._agora)
         self._conn.execute(
