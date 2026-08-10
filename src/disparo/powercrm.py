@@ -1,3 +1,4 @@
+# src/disparo/powercrm.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,30 +23,39 @@ class PowerCRMRecusa(PowerCRMErro):
 @dataclass(frozen=True)
 class Cotacao:
     cotacao_id: str
+    negociacao_id: str
     plano: str
     mensalidade: str
     adesao: str
 
 
-@dataclass(frozen=True)
-class Cobranca:
-    cobranca_id: str
-    url_boleto: str
-    pix_copia_cola: str
+def _dinheiro(valor) -> str:
+    return f"{float(valor):.2f}".replace(".", ",")
+
+
+def _escolher_plano(planos: list[dict]) -> str:
+    for plano in planos:
+        if plano.get("isSelected"):
+            return plano.get("name", "")
+    for plano in planos:
+        if plano.get("active"):
+            return plano.get("name", "")
+    return planos[0].get("name", "") if planos else ""
 
 
 class PowerCRM:
-    """Contrato assumido da Power API — ajustar aqui quando a doc real chegar."""
+    """Cliente da Power API (doc: https://power-crm.readme.io/reference)."""
 
     def __init__(self, base_url: str, token: str, http: httpx.Client) -> None:
         self._base = base_url.rstrip("/")
         self._http = http
         self._cabecalhos = {"Authorization": f"Bearer {token}"}
 
-    def _post(self, caminho: str, corpo: dict) -> dict:
+    def _chamar(self, metodo: str, caminho: str, **kwargs) -> dict:
         try:
-            resposta = self._http.post(
-                f"{self._base}{caminho}", json=corpo, headers=self._cabecalhos,
+            resposta = self._http.request(
+                metodo, f"{self._base}{caminho}",
+                headers=self._cabecalhos, **kwargs,
             )
         except httpx.HTTPError as erro:
             raise PowerCRMIndisponivel(str(erro)) from erro
@@ -56,13 +66,20 @@ class PowerCRM:
         return resposta.json()
 
     def cotar(self, nome: str, telefone: str, placa: str) -> Cotacao:
-        dados = self._post("/cotacoes", {
-            "nome": nome, "telefone": telefone, "placa": placa,
+        dados = self._chamar("POST", "/api/quotation/add", json={
+            "name": nome, "phone": telefone, "plts": placa,
         })
-        return Cotacao(str(dados["id"]), dados["plano"],
-                       str(dados["mensalidade"]), str(dados["adesao"]))
-
-    def gerar_cobranca(self, cotacao_id: str) -> Cobranca:
-        dados = self._post(f"/cotacoes/{cotacao_id}/cobrancas", {})
-        return Cobranca(str(dados["id"]), dados["url_boleto"],
-                        dados["pix_copia_cola"])
+        # "sucess" e "negotationCode" são typos da própria API — não corrigir
+        cotacao = dados.get("quotationResponse") or {}
+        codigo = cotacao.get("quotationCode")
+        if not dados.get("sucess") or not codigo:
+            raise PowerCRMRecusa(200, f"cotacao recusada: {dados.get('errorVO')}")
+        planos = self._chamar("GET", "/api/quotation/plansQuotation",
+                              params={"quotationCode": codigo})
+        return Cotacao(
+            cotacao_id=str(codigo),
+            negociacao_id=str(cotacao.get("negotationCode") or ""),
+            plano=_escolher_plano(planos.get("plans") or []),
+            mensalidade=_dinheiro(planos["monthlyPrice"]),
+            adesao=_dinheiro(planos["acquisitionPrice"]),
+        )
