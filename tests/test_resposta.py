@@ -80,6 +80,24 @@ def test_opt_out_entra_na_blocklist(conn, lead):
     assert esta_bloqueado(conn, "5511988884444") is True
 
 
+def test_responde_quando_jid_vem_sem_nono_digito(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    msg = MensagemNormalizada("texto", "tudo bem e vc", "551188884444", "WA-alt-1")
+    processar(conn, evo, _claude(_q()), CFG, msg, AGORA, RNG, dormir=lambda s: None)
+    assert evo.enviados  # lead 5511988884444 casou com o JID sem o nono dígito
+    assert status_de(conn, lead) == Status.EM_CONVERSA
+
+
+def test_opt_out_bloqueia_o_telefone_do_cadastro(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    msg = MensagemNormalizada("texto", "para de mandar", "551188884444", "WA-alt-2")
+    processar(conn, evo, _claude(_q("opt_out", "Tranquilo.")), CFG, msg, AGORA, RNG,
+              dormir=lambda s: None)
+    assert esta_bloqueado(conn, "5511988884444") is True  # bloqueia o E164 do lead
+
+
 def test_lead_em_estado_terminal_e_ignorado(conn, lead):
     transicionar(conn, lead, Status.CONTATADO, AGORA)
     transicionar(conn, lead, Status.FRIO, AGORA)

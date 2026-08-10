@@ -23,3 +23,13 @@ def normalizar(bruto: str | None) -> str | None:
     if not ("11" <= ddd <= "99"):
         return None
     return "55" + digitos
+
+
+def variantes(telefone: str) -> tuple[str, ...]:
+    """Variações com e sem o nono dígito — o JID do WhatsApp pode vir sem ele."""
+    local = telefone[2:] if telefone.startswith("55") else telefone
+    if len(local) == 11 and local[2] == "9":
+        return ("55" + local, "55" + local[:2] + local[3:])
+    if len(local) == 10:
+        return ("55" + local, "55" + local[:2] + "9" + local[2:])
+    return (telefone,)

@@ -12,6 +12,7 @@ from disparo.conversador import TETO_TURNOS, conversar
 from disparo.ferramentas import Ferramentas
 from disparo.maquina import Status, robo_pode_falar, status_de, transicionar
 from disparo.midia import MensagemNormalizada
+from disparo.telefone import variantes
 
 _DECISAO_PARA_STATUS = {
     "frio": Status.FRIO,
@@ -24,8 +25,10 @@ _FASES_DE_FECHAMENTO = (Status.NEGOCIANDO, Status.AGUARDANDO_PAGAMENTO)
 
 
 def _lead_por_telefone(conn: sqlite3.Connection, telefone: str) -> sqlite3.Row | None:
+    candidatos = variantes(telefone)
+    marcadores = ",".join("?" * len(candidatos))
     return conn.execute(
-        "SELECT * FROM leads WHERE telefone_e164 = ?", (telefone,)
+        f"SELECT * FROM leads WHERE telefone_e164 IN ({marcadores})", candidatos
     ).fetchone()
 
 
@@ -140,7 +143,7 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
         transicionar(conn, lead["id"], novo_status, agora)
 
     if novo_status is Status.OPT_OUT:
-        blocklist.bloquear(conn, mensagem.telefone, "opt_out", agora)
+        blocklist.bloquear(conn, lead["telefone_e164"], "opt_out", agora)
         eventos.registrar(
             conn, "alerta",
             f"{lead['nome']} pediu opt-out — número na blocklist",

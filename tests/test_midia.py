@@ -17,6 +17,24 @@ def test_texto_simples():
     assert m.wa_message_id == "WA1"
 
 
+def test_data_em_lista_devolve_none():
+    assert normalizar({"data": [{"id": "x"}]}, lambda b: "") is None
+
+
+def test_data_ausente_devolve_none():
+    assert normalizar({"event": "connection.update"}, lambda b: "") is None
+
+
+def test_chat_lid_usa_remote_jid_alt():
+    payload = {"data": {"key": {"id": "WA9", "remoteJid": "231314238263306@lid",
+                                "remoteJidAlt": "553791048239@s.whatsapp.net",
+                                "fromMe": False},
+                        "message": {"conversation": "oi"}}}
+    m = normalizar(payload, lambda b: "")
+    assert m.telefone == "553791048239"
+    assert m.texto == "oi"
+
+
 def test_texto_estendido():
     m = normalizar(
         _envelope({"extendedTextMessage": {"text": "passo sim"}}), lambda b: ""

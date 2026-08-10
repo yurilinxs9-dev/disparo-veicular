@@ -23,12 +23,17 @@ def _telefone(jid: str) -> str:
 
 def normalizar(payload: dict,
                transcritor: Callable[[bytes], str]) -> MensagemNormalizada | None:
-    dados = payload.get("data") or {}
+    dados = payload.get("data")
+    if not isinstance(dados, dict):
+        return None  # eventos como contacts.upsert mandam lista — não é mensagem
     chave = dados.get("key") or {}
     if chave.get("fromMe"):
         return None
 
-    telefone = _telefone(chave.get("remoteJid", ""))
+    jid = str(chave.get("remoteJid", ""))
+    if jid.endswith("@lid"):
+        jid = str(chave.get("remoteJidAlt") or "")
+    telefone = _telefone(jid)
     wa_id = chave.get("id", "")
     msg = dados.get("message") or {}
     comum = {"telefone": telefone, "wa_message_id": wa_id}
