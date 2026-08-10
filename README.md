@@ -33,18 +33,35 @@ definir_inicio(conectar(carregar_config().db), date.today())"
 
 ## Venda autônoma (Etapa 2)
 
-Com `POWERCRM_BASE_URL` e `POWERCRM_TOKEN` no `.env`, a IA cota pela placa,
-apresenta o preço de tabela, gera o boleto (pagável por PIX) e, pago, avisa a
-equipe para agendar a vistoria. Sem essas variáveis o serviço opera no modo
-da Etapa 1 (qualifica e escala para humano).
+Com `POWERCRM_BASE_URL` e `POWERCRM_TOKEN` no `.env`, a IA cota pela placa
+(`POST /api/quotation/add` seguido de `GET /api/quotation/plansQuotation`),
+apresenta o preço de tabela e, no aceite explícito do cliente, aciona a
+ferramenta `fechar_venda`: o lead vai para `aguardando_pagamento` e a equipe é
+avisada ("VENDA FECHADA") para gerar o boleto manualmente no Power CRM e
+mandá-lo na própria conversa — a Power API não tem endpoint de cobrança. Sem
+`POWERCRM_BASE_URL`/`POWERCRM_TOKEN` o serviço opera no modo da Etapa 1
+(qualifica e escala para humano).
 
-Configurar no Power CRM (Minha Empresa → Integrações):
-1. Power API: gerar o token e colocar em `POWERCRM_TOKEN`.
-2. Power Webhook: URL `https://seu-dominio/webhook/powercrm`, token igual ao
-   `POWERCRM_WEBHOOK_TOKEN`, evento de pagamento confirmado.
+A confirmação de pagamento chega pelo **Webhook V2** do Power CRM em
+`/webhook/powercrm`: envelope `{id, type, version, occurredAt, companyId,
+subject, data: {quotationCode, negotiationCode, ...}, metadata}`. Tipos pagos:
+`payment.slip.paid`, `payment.pix.paid`, `payment.card.paid`,
+`payment.cash.paid`; `payment.slip.generated` apenas rearma o lembrete de 48h.
+O lead é casado pelo `data.quotationCode`. **O Power CRM desativa o webhook se
+o endpoint responder qualquer erro** — por isso ele sempre devolve 200 depois
+de validar o token.
+
+Configurar no Power CRM (Minha Empresa → Plugins):
+1. Power API → Adicionar → Gerar Token, marcar "acesso a informações de
+   contato do lead", Salvar. Colocar o token em `POWERCRM_TOKEN`.
+2. Power Webhook → Adicionar: URL `https://seu-dominio/webhook/powercrm`,
+   Token = `POWERCRM_WEBHOOK_TOKEN` (segredo nosso), Tipo "Status do
+   pagamento", Status Ativo.
 
 Regras fixas: preço de tabela sem desconto; cobrança só após aceite explícito;
-lembrete único de boleto em 48h; sem pagamento em 72h a equipe assume.
+lembrete único de boleto em 48h (funciona com ou sem link de boleto salvo,
+já que a equipe pode mandar o boleto direto na conversa); sem pagamento em
+72h a equipe assume.
 
 ## Rodar os testes
 
