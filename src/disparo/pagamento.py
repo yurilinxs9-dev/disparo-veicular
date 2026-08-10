@@ -39,8 +39,12 @@ def criar_rotas(estado) -> APIRouter:
             corpo = await request.json()
         except Exception:
             return {"ok": True}
+        if not isinstance(corpo, dict):
+            return {"ok": True}
         tipo = str(corpo.get("type", ""))
-        dados = corpo.get("data") or {}
+        dados = corpo.get("data")
+        if not isinstance(dados, dict):
+            dados = {}
         codigo = str(dados.get("quotationCode") or "")
         if not codigo:
             return {"ok": True}

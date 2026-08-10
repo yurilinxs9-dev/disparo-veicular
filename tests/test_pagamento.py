@@ -148,3 +148,28 @@ def test_corpo_invalido_devolve_200(conn):
                      headers={**CABECALHO, "Content-Type": "application/json"},
                      content=b"nao e json")
     assert r.status_code == 200
+
+
+def test_corpo_json_null_devolve_200(conn):
+    cliente = TestClient(criar_app(_estado(conn)))
+    r = cliente.post("/webhook/powercrm",
+                     headers={**CABECALHO, "Content-Type": "application/json"},
+                     content=b"null")
+    assert r.status_code == 200
+
+
+def test_corpo_json_lista_devolve_200(conn):
+    cliente = TestClient(criar_app(_estado(conn)))
+    r = cliente.post("/webhook/powercrm", headers=CABECALHO, json=["x"])
+    assert r.status_code == 200
+
+
+def test_data_como_lista_devolve_200_sem_efeito(conn, lead):
+    _aguardando(conn, lead)
+    estado = _estado(conn)
+    cliente = TestClient(criar_app(estado))
+    corpo = {**_evento("payment.slip.paid"), "data": []}
+    r = cliente.post("/webhook/powercrm", headers=CABECALHO, json=corpo)
+    assert r.status_code == 200
+    assert status_de(conn, lead) == Status.AGUARDANDO_PAGAMENTO
+    assert estado.evo.enviados == []
