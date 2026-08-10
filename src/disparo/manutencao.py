@@ -9,8 +9,12 @@ from disparo import disjuntor, eventos, handoff
 from disparo.humano import primeiro_nome
 from disparo.maquina import Status, transicionar
 
-LEMBRETE = ("Oi {nome}, tudo bem? Só lembrando do boleto da proteção: {boleto}. "
-            "Dá pra pagar pelo PIX no próprio boleto. Qualquer dúvida me chama.")
+LEMBRETE_COM_LINK = ("Oi {nome}, tudo bem? Só lembrando do boleto da proteção: "
+                     "{boleto}. Dá pra pagar pelo PIX no próprio boleto. "
+                     "Qualquer dúvida me chama.")
+LEMBRETE_SEM_LINK = ("Oi {nome}, tudo bem? Só lembrando do boleto da proteção "
+                     "que a equipe te mandou aqui. Dá pra pagar pelo PIX no "
+                     "próprio boleto. Qualquer dúvida me chama.")
 
 
 def encerrar_sem_resposta(conn: sqlite3.Connection, agora: datetime,
@@ -52,8 +56,12 @@ def cobrar_pendentes(conn: sqlite3.Connection, evo, telefone_equipe: str,
         "AND cobranca_enviada_em < ? AND lembrete_em IS NULL", (corte_48,),
     ).fetchall()
     for lead in pendentes:
-        evo.enviar_texto(lead["telefone_e164"], LEMBRETE.format(
-            nome=primeiro_nome(lead["nome"]), boleto=lead["boleto_url"]))
+        if lead["boleto_url"]:
+            texto = LEMBRETE_COM_LINK.format(
+                nome=primeiro_nome(lead["nome"]), boleto=lead["boleto_url"])
+        else:
+            texto = LEMBRETE_SEM_LINK.format(nome=primeiro_nome(lead["nome"]))
+        evo.enviar_texto(lead["telefone_e164"], texto)
         conn.execute("UPDATE leads SET lembrete_em = ? WHERE id = ?",
                      (agora.isoformat(), lead["id"]))
         conn.commit()

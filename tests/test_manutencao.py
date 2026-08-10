@@ -56,6 +56,18 @@ def _com_boleto(conn, lead, enviado_em):
     conn.commit()
 
 
+def _sem_boleto(conn, lead, enviado_em):
+    from disparo.maquina import Status, transicionar
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    transicionar(conn, lead, Status.EM_CONVERSA, AGORA)
+    transicionar(conn, lead, Status.NEGOCIANDO, AGORA)
+    transicionar(conn, lead, Status.AGUARDANDO_PAGAMENTO, AGORA)
+    conn.execute(
+        "UPDATE leads SET cotacao_id='QTN-1', cobranca_enviada_em=? WHERE id=?",
+        (enviado_em.isoformat(), lead))
+    conn.commit()
+
+
 class EvoFalsa:
     def __init__(self):
         self.enviados = []
@@ -99,3 +111,13 @@ def test_72h_escala(conn, lead):
     assert cobrar_pendentes(conn, evo, "5537999990000", AGORA) == (0, 1)
     assert status_de(conn, lead) == Status.ESCALADO
     assert any(d == "5537999990000" for d, _ in evo.enviados)
+
+
+def test_lembrete_sem_boleto_url_nao_mostra_link(conn, lead):
+    from disparo.manutencao import cobrar_pendentes
+    _sem_boleto(conn, lead, AGORA - timedelta(hours=49))
+    evo = EvoFalsa()
+    assert cobrar_pendentes(conn, evo, "5537999990000", AGORA) == (1, 0)
+    (destino, texto) = evo.enviados[0]
+    assert "None" not in texto
+    assert "boleto" in texto.lower()
