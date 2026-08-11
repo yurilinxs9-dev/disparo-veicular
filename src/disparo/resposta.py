@@ -116,14 +116,12 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     if not fila.aguardar(lead["id"], seq, humano.janela_debounce(rng), dormir):
         return  # chegou mensagem mais nova; a rodada dela responde o bloco
 
-    seq_coberto = seq
     while True:
         if not fila.assumir(lead["id"]):
             return  # rodada ativa reprocessa ao liberar
         try:
-            seq_coberto = _responder(conn, evo, cliente_claude, cfg, lead, agora,
-                                     rng, dormir, powercrm, fila, agora_envio,
-                                     seq_coberto)
+            _responder(conn, evo, cliente_claude, cfg, lead, agora,
+                       rng, dormir, powercrm, fila, agora_envio)
         except Exception as erro:  # não deixa a pendência morrer com a rodada
             eventos.registrar(
                 conn, "alerta",
@@ -139,28 +137,33 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
 def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
                 agora: datetime, rng: random.Random,
                 dormir: Callable[[float], None], powercrm, fila: FilaPorLead,
-                agora_envio: Callable[[], datetime], seq_coberto: int) -> int:
-    """Processa uma rodada. Devolve o seq que ficou coberto pela resposta
-    (ou o seq recebido, sem mudança, se a rodada não respondeu nada)."""
+                agora_envio: Callable[[], datetime]) -> None:
+    """Processa uma rodada. Até onde a resposta enviada cobriu o
+    sequencial do lead fica registrado em `fila` (`fila.cobriu`) — fonte
+    única de verdade, em vez de viajar por parâmetro/retorno entre
+    rodadas (isso é o que fecha a corrida do C-1: uma rodada fresca que
+    assume a trava depois do liberar() de outra, sem pendência, também
+    enxerga corretamente se já cobriu o sequencial atual ou não)."""
     # tira a mídia pendente sempre, mesmo que a rodada aborte logo em
     # seguida — senão ela vaza da fila e gruda numa mensagem futura
     midia = fila.tirar_midia(lead["id"])
 
     if disjuntor.esta_pausado(conn):
-        return seq_coberto  # kill switch: mensagem gravada, robô mudo
+        return  # kill switch: mensagem gravada, robô mudo
 
     lead = _lead_por_id(conn, lead["id"])  # turnos/status frescos a cada rodada
     if lead is None:
-        return seq_coberto
+        return
     if not robo_pode_falar(status_de(conn, lead["id"])):
-        return seq_coberto  # o lead pode ter saído do estado que permite falar
-                            # enquanto esta rodada esperava a trava
+        return  # o lead pode ter saído do estado que permite falar
+                # enquanto esta rodada esperava a trava
 
     historico = _historico(conn, lead["id"])
     if not historico:
-        return seq_coberto
-    if historico[-1]["direcao"] == "saida" and not fila.mudou(lead["id"], seq_coberto):
-        return seq_coberto  # nada além do que já foi coberto pela última resposta
+        return
+    if (historico[-1]["direcao"] == "saida"
+            and fila.seq_atual(lead["id"]) == fila.seq_respondido(lead["id"])):
+        return  # nada além do que já foi coberto pela última resposta
 
     if status_de(conn, lead["id"]) == Status.CONTATADO:
         transicionar(conn, lead["id"], Status.EM_CONVERSA, agora)
@@ -189,6 +192,7 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
                            and ferramentas.chamadas > chamadas_antes)
         if usou_ferramenta or not fila.mudou(lead["id"], seq):
             break  # já causou efeito externo, ou nada novo chegou: resposta vale
+    fila.cobriu(lead["id"], seq)  # fonte única de verdade pro guard acima
 
     turnos = lead["turnos"] + 1
     decisao = qualificacao.decisao
@@ -234,7 +238,7 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
         eventos.registrar(
             conn, "resposta", f"{lead['nome']} respondeu", agora, lead["id"]
         )
-        return seq
+        return
 
     if status_de(conn, lead["id"]) != novo_status:
         transicionar(conn, lead["id"], novo_status, agora)
@@ -255,4 +259,3 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
             conn, "sistema", f"{lead['nome']} encerrado como {novo_status}",
             agora, lead["id"],
         )
-    return seq

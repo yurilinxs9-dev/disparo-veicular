@@ -19,6 +19,7 @@ class FilaPorLead:
         self._ocupado: set[int] = set()
         self._pendente: set[int] = set()
         self._midia: dict[int, tuple[str, str]] = {}
+        self._respondido: dict[int, int] = {}
 
     def chegou(self, lead_id: int, imagem_b64: str | None = None,
                media_type: str | None = None) -> int:
@@ -57,6 +58,18 @@ class FilaPorLead:
     def seq_atual(self, lead_id: int) -> int:
         with self._trava:
             return self._seq.get(lead_id, 0)
+
+    def cobriu(self, lead_id: int, seq: int) -> None:
+        """Registra até onde uma resposta efetivamente enviada cobriu o
+        sequencial do lead. Fonte única de verdade para o guard de
+        histórico terminando em 'saida' — evita que esse valor precise
+        viajar por parâmetro/retorno entre rodadas (ver `_responder`)."""
+        with self._trava:
+            self._respondido[lead_id] = seq
+
+    def seq_respondido(self, lead_id: int) -> int:
+        with self._trava:
+            return self._respondido.get(lead_id, 0)
 
     def tirar_midia(self, lead_id: int) -> tuple[str, str] | None:
         with self._trava:

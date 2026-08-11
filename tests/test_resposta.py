@@ -7,7 +7,7 @@ from disparo.conversador import Qualificacao
 from disparo.fila import FilaPorLead
 from disparo.maquina import Status, status_de, transicionar
 from disparo.midia import MensagemNormalizada
-from disparo.resposta import processar
+from disparo.resposta import _responder, processar
 
 RNG = random.Random(3)
 AGORA = datetime(2026, 8, 4, 11, 0)
@@ -584,3 +584,50 @@ def test_mensagem_durante_envio_nao_termina_prompt_em_turno_assistente(conn, lea
     textos_finais = [b["text"] for b in ultima_chamada[-1]["content"]
                      if b.get("type") == "text"]
     assert any("ainda ai?" in t for t in textos_finais)
+
+
+def test_rodada_fresca_apos_liberar_sem_pendencia_nao_e_engolida(conn, lead):
+    """C-1 (revisão final da branch): a pendência (fix de C1 da Task 3) só
+    cobre o caso em que o debounce de B vence ENQUANTO A ainda segura a
+    trava. Se o debounce de B vence DEPOIS do liberar() de A — sem nenhuma
+    pendência formada — a rodada de B é "fresca": ela mesma monta o guard
+    de histórico terminando em 'saida' e o interpreta como "eu já cobri
+    isso", quando na verdade ela nunca respondeu nada ainda. A mensagem de
+    B fica sem resposta pra sempre (e, se fosse imagem, a mídia já teria
+    sido tirada da fila e perdida)."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    claude = ClaudeContador(_q())
+    chamadas_dormir = []
+
+    def dormir_com_chegada_sem_pendencia(s):
+        chamadas_dormir.append(s)
+        if len(chamadas_dormir) == 3:  # atraso_resposta: já gerou, ainda não enviou
+            # B grava no banco (id antes das saídas de A) e registra a
+            # chegada na fila — exatamente como a própria rodada de B faria
+            # ao vivo antes de dormir a própria janela de debounce. Mas,
+            # diferente dos testes de C1/C3, NÃO chama fila.assumir aqui:
+            # B ainda está dormindo o próprio debounce quando A libera.
+            conn.execute(
+                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, "
+                "wa_message_id, criado_em) VALUES (?, 'entrada', 'texto', "
+                "'ainda ai?', 'WA-fresh-b', ?)", (lead, AGORA.isoformat()))
+            conn.commit()
+            fila.chegou(lead)
+
+    processar(conn, evo, claude, CFG, _msg("oi", "WA-fresh-a"), AGORA, RNG,
+              dormir=dormir_com_chegada_sem_pendencia, fila=fila)
+    assert claude.chamadas == 1
+    assert len(evo.enviados) == 1
+
+    # B "acorda" do próprio debounce só agora — depois do liberar() de A —
+    # e assume a trava como uma rodada fresca, sem nenhuma pendência.
+    assert fila.assumir(lead) is True
+    _responder(conn, evo, claude, CFG, {"id": lead}, AGORA, RNG,
+               dormir=lambda s: None, powercrm=None, fila=fila,
+               agora_envio=lambda: AGORA)
+    fila.liberar(lead)
+
+    assert claude.chamadas == 2      # B tem que gerar a própria resposta
+    assert len(evo.enviados) == 2    # e enviá-la — não pode ser engolida
