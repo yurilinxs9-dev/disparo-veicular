@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from disparo.conversador import (PROMPT, Qualificacao, abertura, conversar)
+from disparo.conversador import (ABERTURAS, PROMPT, Qualificacao, abertura, conversar)
 
 
 class ClienteFalso:
@@ -150,3 +150,16 @@ def test_texto_fora_do_esquema_vira_escalada():
                   [{"direcao": "entrada", "texto": "oi"}])
     assert r.decisao == "escalar"
     assert r.resposta == ""
+
+
+def test_aberturas_tem_12_variacoes_unicas_com_nome():
+    assert len(ABERTURAS) >= 12
+    assert len(set(ABERTURAS)) == len(ABERTURAS)
+    assert all("{nome}" in a for a in ABERTURAS)
+    assert all(not a.endswith(".") for a in ABERTURAS)
+
+
+def test_prompt_tem_regras_duras_e_anti_repeticao():
+    assert "Nunca invente preço" in PROMPT
+    assert "NUNCA repita" in PROMPT
+    assert "não é roteiro fixo" in PROMPT
