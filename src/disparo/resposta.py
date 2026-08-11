@@ -10,6 +10,7 @@ from typing import Callable
 from disparo import blocklist, disjuntor, eventos, handoff, humano
 from disparo.conversador import TETO_TURNOS, conversar
 from disparo.ferramentas import Ferramentas
+from disparo.fila import FilaPorLead
 from disparo.maquina import Status, robo_pode_falar, status_de, transicionar
 from disparo.midia import MensagemNormalizada
 from disparo.telefone import variantes
@@ -22,6 +23,8 @@ _DECISAO_PARA_STATUS = {
 }
 
 _FASES_DE_FECHAMENTO = (Status.NEGOCIANDO, Status.AGUARDANDO_PAGAMENTO)
+
+_MAX_REGENERACOES = 2
 
 
 def _lead_por_telefone(conn: sqlite3.Connection, telefone: str) -> sqlite3.Row | None:
@@ -40,33 +43,47 @@ def _historico(conn: sqlite3.Connection, lead_id: int) -> list[dict]:
     return [dict(linha) for linha in linhas]
 
 
-def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
-              mensagem: MensagemNormalizada, agora: datetime,
-              rng: random.Random,
-              dormir: Callable[[float], None] = _time.sleep,
-              powercrm=None) -> None:
-    """Trata uma mensagem recebida: grava, responde e atualiza o estado do lead."""
-    lead = _lead_por_telefone(conn, mensagem.telefone)
-    if lead is None:
-        return
+def _historico_com_midia(conn: sqlite3.Connection, lead_id: int, midia) -> list[dict]:
+    historico = _historico(conn, lead_id)
+    if midia and historico and historico[-1]["direcao"] == "entrada":
+        historico[-1]["imagem_b64"], historico[-1]["media_type"] = midia
+    return historico
 
-    if not robo_pode_falar(status_de(conn, lead["id"])):
-        return
 
+def _registrar_entrada(conn: sqlite3.Connection, lead_id: int,
+                        mensagem: MensagemNormalizada, agora: datetime) -> bool:
+    """Grava a mensagem recebida. Devolve False se era duplicada."""
     cursor = conn.execute(
         "INSERT INTO mensagens (lead_id, direcao, tipo, texto, transcricao, "
         "wa_message_id, criado_em) VALUES (?, 'entrada', ?, ?, ?, ?, ?) "
         "ON CONFLICT(wa_message_id) DO NOTHING",
-        (lead["id"], mensagem.tipo, mensagem.texto,
+        (lead_id, mensagem.tipo, mensagem.texto,
          mensagem.texto if mensagem.tipo == "audio" else None,
          mensagem.wa_message_id, agora.isoformat()),
     )
     conn.commit()
-    if cursor.rowcount == 0:
-        return  # webhook repetido
+    return cursor.rowcount > 0
 
-    if disjuntor.esta_pausado(conn):
-        return  # kill switch: mensagem gravada, robô mudo
+
+def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
+              mensagem: MensagemNormalizada, agora: datetime,
+              rng: random.Random,
+              dormir: Callable[[float], None] = _time.sleep,
+              powercrm=None, *, fila: FilaPorLead | None = None,
+              agora_envio: Callable[[], datetime] = datetime.now) -> None:
+    """Trata uma mensagem recebida: grava, espera a janela e responde o bloco."""
+    fila = fila if fila is not None else FilaPorLead()
+    lead = _lead_por_telefone(conn, mensagem.telefone)
+    if lead is None:
+        return
+    if not robo_pode_falar(status_de(conn, lead["id"])):
+        return
+
+    gravou = _registrar_entrada(conn, lead["id"], mensagem, agora)
+    if not gravou:
+        # webhook repetido: uma pendência órfã (se existir) é coberta pelo
+        # laço assumir/liberar da rodada que a criou.
+        return
 
     if mensagem.transcricao_falhou:
         eventos.registrar(
@@ -74,6 +91,33 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
             f"Nao consegui transcrever o audio de {lead['nome']}",
             agora, lead["id"],
         )
+
+    seq = fila.chegou(lead["id"], mensagem.imagem_b64, mensagem.media_type)
+    if not fila.aguardar(lead["id"], seq, humano.janela_debounce(rng), dormir):
+        return  # chegou mensagem mais nova; a rodada dela responde o bloco
+
+    while True:
+        if not fila.assumir(lead["id"]):
+            return  # rodada ativa reprocessa ao liberar
+        try:
+            _responder(conn, evo, cliente_claude, cfg, lead, agora, rng,
+                       dormir, powercrm, fila, agora_envio)
+        finally:
+            reprocessar = fila.liberar(lead["id"])
+        if not reprocessar:
+            return
+
+
+def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
+                agora: datetime, rng: random.Random,
+                dormir: Callable[[float], None], powercrm, fila: FilaPorLead,
+                agora_envio: Callable[[], datetime]) -> None:
+    if disjuntor.esta_pausado(conn):
+        return  # kill switch: mensagem gravada, robô mudo
+
+    historico = _historico(conn, lead["id"])
+    if not historico or historico[-1]["direcao"] == "saida":
+        return  # nada novo a responder (bloco já coberto por regeneração)
 
     if status_de(conn, lead["id"]) == Status.CONTATADO:
         transicionar(conn, lead["id"], Status.EM_CONVERSA, agora)
@@ -85,21 +129,27 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
                    if powercrm is not None else None)
 
     dormir(humano.atraso_leitura(rng))
-    evo.marcar_lida(mensagem.telefone, mensagem.wa_message_id)
+    ultima = conn.execute(
+        "SELECT wa_message_id FROM mensagens WHERE lead_id = ? AND "
+        "direcao = 'entrada' ORDER BY id DESC LIMIT 1", (lead["id"],)
+    ).fetchone()
+    if ultima and ultima["wa_message_id"]:
+        evo.marcar_lida(lead["telefone_e164"], ultima["wa_message_id"])
 
-    historico = _historico(conn, lead["id"])
-    if mensagem.imagem_b64:
-        historico[-1]["imagem_b64"] = mensagem.imagem_b64
-        historico[-1]["media_type"] = mensagem.media_type
-
-    qualificacao = conversar(cliente_claude, dict(lead), historico,
-                             ferramentas=ferramentas, modelo=modelo)
+    midia = fila.tirar_midia(lead["id"])
+    for _ in range(_MAX_REGENERACOES + 1):
+        seq = fila.seq_atual(lead["id"])
+        historico = _historico_com_midia(conn, lead["id"], midia)
+        qualificacao = conversar(cliente_claude, dict(lead), historico,
+                                 ferramentas=ferramentas, modelo=modelo)
+        if not fila.mudou(lead["id"], seq):
+            break  # nada chegou durante a geração; resposta vale
 
     turnos = lead["turnos"] + 1
     decisao = qualificacao.decisao
     if turnos >= TETO_TURNOS and decisao == "continuar":
         decisao = "escalar"
-    if decisao != "opt_out":  # blocklist sempre vence sobre as escaladas automáticas
+    if decisao != "opt_out":  # blocklist sempre vence sobre escaladas automáticas
         if ferramentas is not None and ferramentas.falhas_powercrm >= 2:
             decisao = "escalar"
         if ferramentas is not None and ferramentas.escalou:
@@ -108,18 +158,20 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     dormir(humano.atraso_resposta(rng))
     if qualificacao.resposta:
         for parte in humano.quebrar(qualificacao.resposta):
-            evo.digitando(mensagem.telefone, humano.duracao_digitando(parte, rng))
+            evo.digitando(lead["telefone_e164"],
+                          humano.duracao_digitando(parte, rng))
             dormir(humano.duracao_digitando(parte, rng))
-            wa_id = evo.enviar_texto(mensagem.telefone, parte)
+            wa_id = evo.enviar_texto(lead["telefone_e164"], parte)
             conn.execute(
-                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, wa_message_id, "
-                "criado_em) VALUES (?, 'saida', 'texto', ?, ?, ?)",
-                (lead["id"], parte, wa_id, agora.isoformat()),
+                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, "
+                "wa_message_id, criado_em) VALUES (?, 'saida', 'texto', ?, ?, ?)",
+                (lead["id"], parte, wa_id, agora_envio().isoformat()),
             )
 
     conn.execute(
-        "UPDATE leads SET turnos = ?, resumo = ?, paga_hoje = ?, tem_cobertura = ?, "
-        "carro_quitado = ?, ultimo_evento_em = ? WHERE id = ?",
+        "UPDATE leads SET turnos = ?, resumo = ?, paga_hoje = ?, "
+        "tem_cobertura = ?, carro_quitado = ?, ultimo_evento_em = ? "
+        "WHERE id = ?",
         (turnos, qualificacao.resumo, qualificacao.paga_hoje,
          qualificacao.tem_cobertura, qualificacao.carro_quitado,
          agora.isoformat(), lead["id"]),
@@ -129,7 +181,7 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     if ferramentas is not None and ferramentas.fechou:
         handoff.avisar_fechamento(
             conn, evo, cfg.equipe_telefone,
-            _lead_por_telefone(conn, mensagem.telefone), agora,
+            _lead_por_telefone(conn, lead["telefone_e164"]), agora,
         )
 
     novo_status = _DECISAO_PARA_STATUS.get(decisao)

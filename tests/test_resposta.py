@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from disparo.blocklist import esta_bloqueado
 from disparo.conversador import Qualificacao
+from disparo.fila import FilaPorLead
 from disparo.maquina import Status, status_de, transicionar
 from disparo.midia import MensagemNormalizada
 from disparo.resposta import processar
@@ -54,6 +55,126 @@ def _q(decisao="continuar", resposta="Tudo bem também."):
     return Qualificacao(resposta=resposta, decisao=decisao, resumo="resumo",
                         paga_hoje=None, tem_cobertura="nao_informado",
                         carro_quitado="nao_informado")
+
+
+class ClaudeContador:
+    """Fake que conta chamadas e permite injetar efeito colateral por chamada."""
+
+    def __init__(self, qualificacao, ao_chamar=None):
+        self.chamadas = 0
+        self._q = qualificacao
+        self._ao_chamar = ao_chamar
+        self.messages = SimpleNamespace(create=self._create)
+
+    def _create(self, **kw):
+        self.chamadas += 1
+        if self._ao_chamar:
+            self._ao_chamar(self.chamadas)
+        return _resposta_final(self._q)
+
+
+def test_bloco_de_mensagens_rapidas_gera_uma_resposta_so(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    claude = ClaudeContador(_q())
+    # a janela de debounce é sempre a PRIMEIRA chamada de dormir da rodada;
+    # usamos um contador de chamadas em vez do valor de segundos sorteado
+    # (nota do brief) para simular a segunda mensagem chegando durante ela.
+    chamadas_dormir = []
+
+    def dormir_rodada1(s):
+        chamadas_dormir.append(s)
+        if len(chamadas_dormir) == 1:
+            fila.chegou(lead)
+
+    # simula duas mensagens: a primeira desiste no debounce, a segunda responde
+    processar(conn, evo, claude, CFG, _msg("Sim", "WA-b1"), AGORA, RNG,
+              dormir=dormir_rodada1, fila=fila)
+    # rodada 1 morreu no aguardar (chegou WA-b2 durante a janela); agora a rodada 2:
+    processar(conn, evo, claude, CFG, _msg("Por que?", "WA-b2"), AGORA, RNG,
+              dormir=lambda s: None, fila=fila)
+    assert claude.chamadas == 1          # uma geração para o bloco inteiro
+    assert len({t for t, _ in evo.enviados}) == 1
+
+
+def test_regenera_quando_chega_mensagem_durante_a_geracao(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+
+    def chega_no_meio(chamada):
+        if chamada == 1:  # simula mensagem nova enquanto o modelo gerava
+            fila.chegou(lead)
+            conn.execute(
+                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, "
+                "wa_message_id, criado_em) VALUES (?, 'entrada', 'texto', "
+                "'e outra coisa', 'WA-r2', ?)", (lead, AGORA.isoformat()))
+            conn.commit()
+
+    claude = ClaudeContador(_q(), ao_chamar=chega_no_meio)
+    processar(conn, evo, claude, CFG, _msg("primeira", "WA-r1"), AGORA, RNG,
+              dormir=lambda s: None, fila=fila)
+    assert claude.chamadas == 2          # 1ª descartada, regenerou
+
+
+def test_regeneracao_para_na_terceira_tentativa(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    claude = ClaudeContador(_q(), ao_chamar=lambda n: fila.chegou(lead))
+    processar(conn, evo, claude, CFG, _msg("oi", "WA-t1"), AGORA, RNG,
+              dormir=lambda s: None, fila=fila)
+    assert claude.chamadas == 3          # original + 2 regenerações, depois envia
+    assert evo.enviados                  # enviou mesmo com fila mudando sempre
+
+
+def test_saida_gravada_com_hora_real_do_envio(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    envio = datetime(2026, 8, 4, 11, 2, 30)
+    processar(conn, evo, _claude(_q()), CFG, _msg(), AGORA, RNG,
+              dormir=lambda s: None, agora_envio=lambda: envio)
+    linha = conn.execute(
+        "SELECT criado_em FROM mensagens WHERE direcao='saida'").fetchone()
+    assert linha["criado_em"] == envio.isoformat()
+
+
+def test_marca_lida_a_ultima_entrada_do_banco(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    conn.execute(
+        "INSERT INTO mensagens (lead_id, direcao, tipo, texto, wa_message_id, "
+        "criado_em) VALUES (?, 'entrada', 'texto', 'antiga', 'WA-old', ?)",
+        (lead, AGORA.isoformat()))
+    conn.commit()
+    evo = EvoFalsa()
+    processar(conn, evo, _claude(_q()), CFG, _msg("nova", "WA-new"), AGORA, RNG,
+              dormir=lambda s: None)
+    assert evo.lidas == ["WA-new"]
+
+
+def test_nao_responde_se_historico_termina_em_saida(conn, lead):
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    claude = ClaudeContador(_q())
+    # a 2ª chamada de dormir é a de atraso_leitura, já dentro de _responder,
+    # com o lead ocupado pelo laço assumir/liberar de `processar`: simula uma
+    # rodada concorrente tentando assumir, que fica pendente e força uma
+    # reprocessagem — mas o histórico já termina em 'saida' nessa hora.
+    chamadas_dormir = []
+
+    def dormir_com_pendencia(s):
+        chamadas_dormir.append(s)
+        if len(chamadas_dormir) == 2:
+            fila.assumir(lead)
+
+    processar(conn, evo, claude, CFG, _msg("oi", "WA-g1"), AGORA, RNG,
+              dormir=dormir_com_pendencia, fila=fila)
+    # a rodada pendente reprocessou, mas o guard de histórico terminando em
+    # 'saida' evitou gerar (e enviar) de novo.
+    assert claude.chamadas == 1
+    assert len(evo.enviados) == 1
 
 
 def test_responde_e_vai_para_em_conversa(conn, lead):
