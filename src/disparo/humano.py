@@ -13,14 +13,19 @@ def primeiro_nome(nome: str) -> str:
     return partes[0] if partes else "cliente"
 
 
+def janela_debounce(rng: random.Random) -> float:
+    """Segundos sem mensagem nova antes de responder um bloco."""
+    return rng.uniform(8, 20)
+
+
 def atraso_leitura(rng: random.Random) -> float:
     """Segundos entre a mensagem chegar e ser marcada como lida."""
-    return rng.uniform(3, 20)
+    return rng.uniform(2, 8)
 
 
 def atraso_resposta(rng: random.Random) -> float:
     """Segundos entre ler a mensagem do lead e começar a responder."""
-    return rng.uniform(15, 180)
+    return rng.uniform(3, 25)
 
 
 def intervalo_entre_disparos(rng: random.Random) -> float:

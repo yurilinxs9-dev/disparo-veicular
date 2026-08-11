@@ -3,7 +3,7 @@ import random
 
 from disparo.humano import (atraso_leitura, atraso_resposta,
                             duracao_digitando, intervalo_entre_disparos,
-                            primeiro_nome, quebrar)
+                            janela_debounce, primeiro_nome, quebrar)
 
 RNG = random.Random(42)
 
@@ -17,11 +17,28 @@ def test_primeiro_nome_vazio_cai_para_cliente():
     assert primeiro_nome("   ") == "cliente"
 
 
-def test_faixas():
+def test_janela_debounce_entre_8_e_20_segundos():
+    rng = random.Random(1)
     for _ in range(200):
-        assert 3 <= atraso_leitura(RNG) <= 20
-        assert 15 <= atraso_resposta(RNG) <= 180
-        assert 120 <= intervalo_entre_disparos(RNG) <= 480
+        assert 8 <= janela_debounce(rng) <= 20
+
+
+def test_atraso_leitura_entre_2_e_8_segundos():
+    rng = random.Random(1)
+    for _ in range(200):
+        assert 2 <= atraso_leitura(rng) <= 8
+
+
+def test_atraso_resposta_entre_3_e_25_segundos():
+    rng = random.Random(1)
+    for _ in range(200):
+        assert 3 <= atraso_resposta(rng) <= 25
+
+
+def test_intervalo_entre_disparos_entre_120_e_480_segundos():
+    rng = random.Random(1)
+    for _ in range(200):
+        assert 120 <= intervalo_entre_disparos(rng) <= 480
 
 
 def test_digitando_cresce_com_o_texto():
