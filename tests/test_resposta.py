@@ -545,3 +545,42 @@ def test_excecao_em_responder_nao_perde_a_pendencia(conn, lead):
         "SELECT texto FROM eventos WHERE tipo = 'alerta' ORDER BY id DESC "
         "LIMIT 1").fetchone()
     assert "timeout simulado" in alerta["texto"]
+
+
+def test_mensagem_durante_envio_nao_termina_prompt_em_turno_assistente(conn, lead):
+    """C3: o fix de C1 não pode montar uma lista de `messages` terminando
+    em turno assistant — isso ativa "prefill" na API, incompatível com
+    saída estruturada (e quebra a fase de fechamento com 400)."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    chamadas_messages = []
+
+    def criar(**kw):
+        chamadas_messages.append(kw["messages"])
+        return _resposta_final(_q())
+
+    from types import SimpleNamespace as NS
+    cliente = NS(messages=NS(create=criar))
+    chamadas_dormir = []
+
+    def dormir_com_mensagem_durante_envio(s):
+        chamadas_dormir.append(s)
+        if len(chamadas_dormir) == 3:  # atraso_resposta: já gerou, ainda não enviou
+            conn.execute(
+                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, "
+                "wa_message_id, criado_em) VALUES (?, 'entrada', 'texto', "
+                "'ainda ai?', 'WA-c3-b', ?)", (lead, AGORA.isoformat()))
+            conn.commit()
+            fila.chegou(lead)
+            fila.assumir(lead)  # concorrente: A ainda segura a trava
+
+    processar(conn, evo, cliente, CFG, _msg("oi", "WA-c3-a"), AGORA, RNG,
+              dormir=dormir_com_mensagem_durante_envio, fila=fila)
+
+    assert len(chamadas_messages) == 2  # respondeu A e, na reprocessagem, B
+    ultima_chamada = chamadas_messages[-1]
+    assert ultima_chamada[-1]["role"] == "user"  # nunca pode terminar em assistant
+    textos_finais = [b["text"] for b in ultima_chamada[-1]["content"]
+                     if b.get("type") == "text"]
+    assert any("ainda ai?" in t for t in textos_finais)

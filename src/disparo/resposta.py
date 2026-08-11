@@ -47,8 +47,24 @@ def _historico(conn: sqlite3.Connection, lead_id: int) -> list[dict]:
     return [dict(linha) for linha in linhas]
 
 
+def _garantir_turno_final_de_usuario(historico: list[dict]) -> list[dict]:
+    """A API não aceita a lista de `messages` terminando em turno do
+    assistente (ativa "prefill", incompatível com saída estruturada). Uma
+    entrada pode ficar presa antes do bloco de saída da rodada anterior
+    quando chega durante o envio dela (corrida do C1) — nesse caso repete a
+    última entrada como turno final, garantindo que a conversa sempre
+    termine com o lead falando."""
+    if not historico or historico[-1]["direcao"] != "saida":
+        return historico
+    ultima_entrada = next(
+        (m for m in reversed(historico) if m["direcao"] == "entrada"), None)
+    if ultima_entrada is None:
+        return historico
+    return historico + [dict(ultima_entrada)]
+
+
 def _historico_com_midia(conn: sqlite3.Connection, lead_id: int, midia) -> list[dict]:
-    historico = _historico(conn, lead_id)
+    historico = _garantir_turno_final_de_usuario(_historico(conn, lead_id))
     if midia and historico and historico[-1]["direcao"] == "entrada":
         historico[-1]["imagem_b64"], historico[-1]["media_type"] = midia
     return historico
@@ -163,7 +179,6 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
     if ultima and ultima["wa_message_id"]:
         evo.marcar_lida(lead["telefone_e164"], ultima["wa_message_id"])
 
-    seq = seq_coberto
     for _ in range(_MAX_REGENERACOES + 1):
         seq = fila.seq_atual(lead["id"])
         chamadas_antes = ferramentas.chamadas if ferramentas is not None else 0
