@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from disparo.app import criar_app
+from disparo.fila import FilaPorLead
 
 
 class EvoFalsa:
@@ -42,6 +43,7 @@ def _estado(conn):
         transcritor=lambda b: "",
         dormir=lambda s: None,
         powercrm=None,
+        fila=FilaPorLead(),
     )
 
 
@@ -97,3 +99,27 @@ def test_webhook_repassa_powercrm(conn, lead):
     finally:
         wh.processar = original
     assert capturado["powercrm"] is estado.powercrm
+
+
+def test_webhook_repassa_a_fila_do_estado(conn, lead):
+    conn.execute("UPDATE leads SET status = 'contatado' WHERE id = ?", (lead,))
+    conn.commit()
+    estado = _estado(conn)
+    capturado = {}
+    import disparo.webhook as wh
+    original = wh.processar
+
+    def espiao(*args, **kwargs):
+        capturado["fila"] = kwargs.get("fila")
+
+    wh.processar = espiao
+    try:
+        cliente = TestClient(criar_app(estado))
+        corpo = {"data": {"key": {"id": "WA-f", "remoteJid":
+                                  "5511988884444@s.whatsapp.net",
+                                  "fromMe": False},
+                          "message": {"conversation": "oi"}}}
+        cliente.post("/webhook", json=corpo)
+    finally:
+        wh.processar = original
+    assert capturado["fila"] is estado.fila

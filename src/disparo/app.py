@@ -17,6 +17,7 @@ from disparo.agendador import tentar_disparar
 from disparo.config import carregar_config
 from disparo.db import conectar, criar_schema
 from disparo.evolution import Evolution
+from disparo.fila import FilaPorLead
 from disparo.manutencao import backup, cobrar_pendentes, encerrar_sem_resposta
 from disparo.midia import transcritor_whisper
 from disparo.powercrm import PowerCRM
@@ -54,6 +55,7 @@ def montar_estado() -> SimpleNamespace:
         powercrm=(PowerCRM(cfg.powercrm_base_url, cfg.powercrm_token,
                            httpx.Client(timeout=30))
                   if cfg.powercrm_base_url else None),
+        fila=FilaPorLead(),
     )
 
 
