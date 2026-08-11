@@ -190,3 +190,52 @@ def test_parse_tenta_do_ultimo_bloco_de_texto_para_tras():
                   [{"direcao": "entrada", "texto": "como funciona?"}])
     assert r.decisao == "continuar"
     assert r.resposta == "explico sim"
+
+
+def test_parse_falho_sem_ferramenta_tenta_de_novo_uma_vez():
+    from types import SimpleNamespace
+    from disparo.conversador import Qualificacao, conversar
+    q = Qualificacao(resposta="oi de novo", decisao="continuar", resumo="r",
+                     paga_hoje=None)
+    respostas = [
+        SimpleNamespace(content=[SimpleNamespace(type="text", text=" ")]),
+        SimpleNamespace(content=[SimpleNamespace(
+            type="text", text=q.model_dump_json())]),
+    ]
+    chamadas = []
+    cliente = SimpleNamespace(messages=SimpleNamespace(
+        create=lambda **kw: (chamadas.append(1), respostas[len(chamadas) - 1])[1]))
+    r = conversar(cliente, {"nome": "J", "veiculo": "Onix"},
+                  [{"direcao": "entrada", "texto": "oi"}])
+    assert len(chamadas) == 2
+    assert r.decisao == "continuar"
+    assert r.resposta == "oi de novo"
+
+
+def test_parse_falho_apos_ferramenta_nao_tenta_de_novo():
+    from types import SimpleNamespace
+    from disparo.conversador import conversar
+
+    class Fer:
+        chamadas = 0
+
+        def executar(self, nome, entrada):
+            self.chamadas += 1
+            return "erro: nenhuma cotacao feita"
+
+    respostas = [
+        SimpleNamespace(content=[
+            SimpleNamespace(type="text", text=" "),
+            SimpleNamespace(type="tool_use", id="t1", name="fechar_venda",
+                            input={})]),
+        SimpleNamespace(content=[SimpleNamespace(type="text", text=" ")]),
+    ]
+    criadas = []
+    cliente = SimpleNamespace(messages=SimpleNamespace(
+        create=lambda **kw: (criadas.append(1), respostas[len(criadas) - 1])[1]))
+    r = conversar(cliente, {"nome": "J", "veiculo": "Onix"},
+                  [{"direcao": "entrada", "texto": "oi"}], ferramentas=Fer())
+    # ferramenta executou na tentativa: NUNCA re-tenta (efeito colateral externo)
+    assert len(criadas) == 2  # 1a create + create pos tool_result; sem retry
+    assert r.decisao == "escalar"
+    assert r.resposta != ""

@@ -159,47 +159,58 @@ def conversar(cliente: Any, lead: dict, historico: list[dict],
     if ferramentas is not None:
         extras["tools"] = FERRAMENTAS_SPEC
 
-    for _ in range(4):
-        resposta = cliente.messages.create(
-            model=modelo,
-            max_tokens=1024,
-            system=[{
-                "type": "text",
-                "text": sistema,
-                "cache_control": {"type": "ephemeral"},
-            }],
-            messages=mensagens,
-            output_config={"format": {"type": "json_schema",
-                                      "schema": ESQUEMA_QUALIFICACAO}},
-            **extras,
-        )
-        blocos = getattr(resposta, "content", [])
-        usos = [b for b in blocos if getattr(b, "type", "") == "tool_use"]
-        if not usos or ferramentas is None:
-            break
-        # replay do turno do assistente: texto (se houver) + tool_use
-        eco = [{"type": "text", "text": b.text} for b in blocos
-               if getattr(b, "type", "") == "text" and b.text.strip()]
-        mensagens.append({"role": "assistant", "content": eco + [
-            {"type": "tool_use", "id": u.id, "name": u.name, "input": u.input}
-            for u in usos
-        ]})
-        mensagens.append({"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": u.id,
-             "content": ferramentas.executar(u.name, dict(u.input))}
-            for u in usos
-        ]})
+    # Até 2 tentativas: o modelo às vezes devolve um bloco de texto vazio em
+    # vez do JSON; uma reamostragem costuma resolver. Nunca re-tenta se a
+    # tentativa executou ferramenta (efeito colateral externo, ex.: cotação).
+    for tentativa in range(2):
+        chamadas_antes = getattr(ferramentas, "chamadas", 0)
+        for _ in range(4):
+            resposta = cliente.messages.create(
+                model=modelo,
+                max_tokens=1024,
+                system=[{
+                    "type": "text",
+                    "text": sistema,
+                    "cache_control": {"type": "ephemeral"},
+                }],
+                messages=mensagens,
+                output_config={"format": {"type": "json_schema",
+                                          "schema": ESQUEMA_QUALIFICACAO}},
+                **extras,
+            )
+            blocos = getattr(resposta, "content", [])
+            usos = [b for b in blocos if getattr(b, "type", "") == "tool_use"]
+            if not usos or ferramentas is None:
+                break
+            # replay do turno do assistente: texto (se houver) + tool_use
+            eco = [{"type": "text", "text": b.text} for b in blocos
+                   if getattr(b, "type", "") == "text" and b.text.strip()]
+            mensagens.append({"role": "assistant", "content": eco + [
+                {"type": "tool_use", "id": u.id, "name": u.name, "input": u.input}
+                for u in usos
+            ]})
+            mensagens.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": u.id,
+                 "content": ferramentas.executar(u.name, dict(u.input))}
+                for u in usos
+            ]})
 
-    # A saída estruturada é o último bloco de texto; blocos anteriores podem
-    # ser preâmbulo solto de um turno com ferramenta.
-    textos = [b.text for b in getattr(resposta, "content", [])
-              if getattr(b, "type", "") == "text"]
-    for texto in reversed(textos):
-        try:
-            return Qualificacao.model_validate_json(texto)
-        except Exception:
-            continue
-    print(f"conversador: saida nao estruturada; blocos={textos!r}", flush=True)
+        # A saída estruturada é o último bloco de texto; blocos anteriores
+        # podem ser preâmbulo solto de um turno com ferramenta.
+        textos = [b.text for b in getattr(resposta, "content", [])
+                  if getattr(b, "type", "") == "text"]
+        for texto in reversed(textos):
+            try:
+                return Qualificacao.model_validate_json(texto)
+            except Exception:
+                continue
+        tipos = [getattr(b, "type", "?")
+                 for b in getattr(resposta, "content", [])]
+        print(f"conversador: saida nao estruturada (tentativa {tentativa + 1}); "
+              f"stop={getattr(resposta, 'stop_reason', '?')} tipos={tipos!r} "
+              f"blocos={textos!r}", flush=True)
+        if getattr(ferramentas, "chamadas", 0) != chamadas_antes:
+            break  # ferramenta rodou: reamostrar poderia duplicar o efeito
     return Qualificacao(
         resposta="deixa eu te passar com alguém da equipe pra te ajudar "
                  "melhor, só um instante",
