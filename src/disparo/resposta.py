@@ -35,6 +35,10 @@ def _lead_por_telefone(conn: sqlite3.Connection, telefone: str) -> sqlite3.Row |
     ).fetchone()
 
 
+def _lead_por_id(conn: sqlite3.Connection, lead_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM leads WHERE id = ?", (lead_id,)).fetchone()
+
+
 def _historico(conn: sqlite3.Connection, lead_id: int) -> list[dict]:
     linhas = conn.execute(
         "SELECT direcao, texto FROM mensagens WHERE lead_id = ? ORDER BY id",
@@ -96,12 +100,20 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
     if not fila.aguardar(lead["id"], seq, humano.janela_debounce(rng), dormir):
         return  # chegou mensagem mais nova; a rodada dela responde o bloco
 
+    seq_coberto = seq
     while True:
         if not fila.assumir(lead["id"]):
             return  # rodada ativa reprocessa ao liberar
         try:
-            _responder(conn, evo, cliente_claude, cfg, lead, agora, rng,
-                       dormir, powercrm, fila, agora_envio)
+            seq_coberto = _responder(conn, evo, cliente_claude, cfg, lead, agora,
+                                     rng, dormir, powercrm, fila, agora_envio,
+                                     seq_coberto)
+        except Exception as erro:  # não deixa a pendência morrer com a rodada
+            eventos.registrar(
+                conn, "alerta",
+                f"Erro ao responder {lead['nome']}: {erro}",
+                agora, lead["id"],
+            )
         finally:
             reprocessar = fila.liberar(lead["id"])
         if not reprocessar:
@@ -111,13 +123,28 @@ def processar(conn: sqlite3.Connection, evo, cliente_claude, cfg,
 def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
                 agora: datetime, rng: random.Random,
                 dormir: Callable[[float], None], powercrm, fila: FilaPorLead,
-                agora_envio: Callable[[], datetime]) -> None:
+                agora_envio: Callable[[], datetime], seq_coberto: int) -> int:
+    """Processa uma rodada. Devolve o seq que ficou coberto pela resposta
+    (ou o seq recebido, sem mudança, se a rodada não respondeu nada)."""
+    # tira a mídia pendente sempre, mesmo que a rodada aborte logo em
+    # seguida — senão ela vaza da fila e gruda numa mensagem futura
+    midia = fila.tirar_midia(lead["id"])
+
     if disjuntor.esta_pausado(conn):
-        return  # kill switch: mensagem gravada, robô mudo
+        return seq_coberto  # kill switch: mensagem gravada, robô mudo
+
+    lead = _lead_por_id(conn, lead["id"])  # turnos/status frescos a cada rodada
+    if lead is None:
+        return seq_coberto
+    if not robo_pode_falar(status_de(conn, lead["id"])):
+        return seq_coberto  # o lead pode ter saído do estado que permite falar
+                            # enquanto esta rodada esperava a trava
 
     historico = _historico(conn, lead["id"])
-    if not historico or historico[-1]["direcao"] == "saida":
-        return  # nada novo a responder (bloco já coberto por regeneração)
+    if not historico:
+        return seq_coberto
+    if historico[-1]["direcao"] == "saida" and not fila.mudou(lead["id"], seq_coberto):
+        return seq_coberto  # nada além do que já foi coberto pela última resposta
 
     if status_de(conn, lead["id"]) == Status.CONTATADO:
         transicionar(conn, lead["id"], Status.EM_CONVERSA, agora)
@@ -136,14 +163,17 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
     if ultima and ultima["wa_message_id"]:
         evo.marcar_lida(lead["telefone_e164"], ultima["wa_message_id"])
 
-    midia = fila.tirar_midia(lead["id"])
+    seq = seq_coberto
     for _ in range(_MAX_REGENERACOES + 1):
         seq = fila.seq_atual(lead["id"])
+        chamadas_antes = ferramentas.chamadas if ferramentas is not None else 0
         historico = _historico_com_midia(conn, lead["id"], midia)
         qualificacao = conversar(cliente_claude, dict(lead), historico,
                                  ferramentas=ferramentas, modelo=modelo)
-        if not fila.mudou(lead["id"], seq):
-            break  # nada chegou durante a geração; resposta vale
+        usou_ferramenta = (ferramentas is not None
+                           and ferramentas.chamadas > chamadas_antes)
+        if usou_ferramenta or not fila.mudou(lead["id"], seq):
+            break  # já causou efeito externo, ou nada novo chegou: resposta vale
 
     turnos = lead["turnos"] + 1
     decisao = qualificacao.decisao
@@ -181,7 +211,7 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
     if ferramentas is not None and ferramentas.fechou:
         handoff.avisar_fechamento(
             conn, evo, cfg.equipe_telefone,
-            _lead_por_telefone(conn, lead["telefone_e164"]), agora,
+            _lead_por_id(conn, lead["id"]), agora,
         )
 
     novo_status = _DECISAO_PARA_STATUS.get(decisao)
@@ -189,7 +219,7 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
         eventos.registrar(
             conn, "resposta", f"{lead['nome']} respondeu", agora, lead["id"]
         )
-        return
+        return seq
 
     if status_de(conn, lead["id"]) != novo_status:
         transicionar(conn, lead["id"], novo_status, agora)
@@ -210,3 +240,4 @@ def _responder(conn: sqlite3.Connection, evo, cliente_claude, cfg, lead,
             conn, "sistema", f"{lead['nome']} encerrado como {novo_status}",
             agora, lead["id"],
         )
+    return seq

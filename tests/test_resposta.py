@@ -352,3 +352,196 @@ def test_fechamento_avisa_equipe(conn, lead):
         t for d, t in evo.enviados if d == CFG.equipe_telefone)
     assert "VENDA FECHADA" in texto_equipe
     assert "QTN-1" in texto_equipe
+
+
+# --- Testes de regressão da revisão da Task 3 (C1, C2, I1-I5) --------------
+
+def test_mensagem_durante_envio_nao_e_engolida(conn, lead):
+    """C1: mensagem que chega depois da geração, mas antes do envio, não
+    pode ser perdida pelo guard de histórico terminando em 'saida'."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    claude = ClaudeContador(_q())
+    chamadas_dormir = []
+
+    def dormir_com_mensagem_durante_envio(s):
+        chamadas_dormir.append(s)
+        if len(chamadas_dormir) == 3:  # atraso_resposta: já gerou, ainda não enviou
+            conn.execute(
+                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, "
+                "wa_message_id, criado_em) VALUES (?, 'entrada', 'texto', "
+                "'ainda ai?', 'WA-c1-b', ?)", (lead, AGORA.isoformat()))
+            conn.commit()
+            fila.chegou(lead)      # rodada de B chega e reinicia o sequencial
+            fila.assumir(lead)     # concorrente: A ainda segura a trava, B fica pendente
+
+    processar(conn, evo, claude, CFG, _msg("oi", "WA-c1-a"), AGORA, RNG,
+              dormir=dormir_com_mensagem_durante_envio, fila=fila)
+    assert claude.chamadas == 2      # respondeu A e, na reprocessagem, B também
+    assert len(evo.enviados) == 2
+
+
+def test_regeneracao_nao_reexecuta_ferramenta_com_efeito_colateral(conn, lead):
+    """C2: uma tentativa descartada não pode repetir uma ferramenta que já
+    causou efeito externo (aqui, uma cotação no PowerCRM)."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    transicionar(conn, lead, Status.EM_CONVERSA, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+
+    from disparo.powercrm import Cotacao
+
+    chamadas_cotar = []
+
+    class PowerContador:
+        def cotar(self, nome, telefone, placa):
+            chamadas_cotar.append(placa)
+            return Cotacao("QTN-1", "NEG-1", "Master", "189,90", "250,00")
+
+    from types import SimpleNamespace as NS
+    contagem = {"n": 0}
+
+    def criar(**kw):
+        contagem["n"] += 1
+        n = contagem["n"]
+        if n == 1:
+            # simula mensagem nova chegando durante a 1ª tentativa, depois
+            # que a ferramenta com efeito externo já rodou
+            fila.chegou(lead)
+        if n % 2 == 1:  # a 1ª chamada de cada tentativa pede a cotação
+            return NS(content=[NS(type="tool_use", id=f"t{n}", name="cotar",
+                                   input={"placa": "ABC1D23"})])
+        return _resposta_final(_q(resposta="Fica R$189,90 por mês."))
+
+    cliente = NS(messages=NS(create=criar))
+    processar(conn, evo, cliente, CFG, _msg("quero cotar", "WA-c2"), AGORA, RNG,
+              dormir=lambda s: None, fila=fila, powercrm=PowerContador())
+    assert chamadas_cotar == ["ABC1D23"]   # cotou uma única vez, sem duplicar
+    assert len(evo.enviados) == 1
+
+
+def test_falha_de_ferramenta_nao_acumula_entre_tentativas_descartadas(conn, lead):
+    """I1: falha de ferramenta de uma tentativa descartada não pode se somar
+    à de uma tentativa seguinte e forçar uma escalada indevida."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    transicionar(conn, lead, Status.EM_CONVERSA, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+
+    class PowerSempreFalha:
+        def cotar(self, *a):
+            from disparo.powercrm import PowerCRMIndisponivel
+            raise PowerCRMIndisponivel("503")
+
+    from types import SimpleNamespace as NS
+    contagem = {"n": 0}
+
+    def criar(**kw):
+        contagem["n"] += 1
+        n = contagem["n"]
+        if n == 1:
+            fila.chegou(lead)   # mensagem nova durante a 1ª tentativa
+        if n % 2 == 1:
+            return NS(content=[NS(type="tool_use", id=f"t{n}", name="cotar",
+                                   input={"placa": "ABC1D23"})])
+        return _resposta_final(_q())
+
+    cliente = NS(messages=NS(create=criar))
+    processar(conn, evo, cliente, CFG, _msg("quero cotar", "WA-i1"), AGORA, RNG,
+              dormir=lambda s: None, fila=fila, powercrm=PowerSempreFalha())
+    assert status_de(conn, lead) != Status.ESCALADO
+
+
+def test_tira_midia_mesmo_quando_a_rodada_aborta_cedo(conn, lead):
+    """I2: a mídia pendente não pode vazar da fila para uma mensagem futura
+    quando a rodada aborta antes de usá-la (aqui, pelo disjuntor pausado)."""
+    from disparo.disjuntor import pausar
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    pausar(conn, "teste", AGORA)
+    msg_com_imagem = MensagemNormalizada(
+        "imagem", "[foto]", "5511988884444", "WA-i2-a",
+        imagem_b64="fotoantiga", media_type="image/jpeg")
+    processar(conn, evo, _claude(_q()), CFG, msg_com_imagem, AGORA, RNG,
+              dormir=lambda s: None, fila=fila)
+    assert fila.tirar_midia(lead) is None  # não pode sobrar imagem na fila
+
+
+def test_recheca_robo_pode_falar_apos_a_espera(conn, lead):
+    """I3: se o lead sair do estado que permite o robô falar enquanto a
+    rodada espera a trava, a rodada não pode responder mesmo assim."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    claude = ClaudeContador(_q())
+    feito = []
+
+    def dormir_com_opt_out_concorrente(s):
+        if not feito:
+            feito.append(True)
+            from disparo.blocklist import bloquear
+            transicionar(conn, lead, Status.OPT_OUT, AGORA)
+            bloquear(conn, "5511988884444", "opt_out", AGORA)
+
+    processar(conn, evo, claude, CFG, _msg("oi", "WA-i3"), AGORA, RNG,
+              dormir=dormir_com_opt_out_concorrente, fila=fila)
+    assert evo.enviados == []
+
+
+def test_turnos_conta_certo_entre_reprocessamentos(conn, lead):
+    """I4: cada rodada reprocessada precisa reler o lead do banco, senão
+    turnos fica subcontado (a rodada 2 recalcula em cima do snapshot velho
+    da rodada 1)."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+    claude = ClaudeContador(_q())
+    chamadas_dormir = []
+
+    def dormir_com_pendencia(s):
+        chamadas_dormir.append(s)
+        if len(chamadas_dormir) == 3:  # atraso_resposta: rodada 1 já gerou
+            conn.execute(
+                "INSERT INTO mensagens (lead_id, direcao, tipo, texto, "
+                "wa_message_id, criado_em) VALUES (?, 'entrada', 'texto', "
+                "'mais uma coisa', 'WA-i4-b', ?)", (lead, AGORA.isoformat()))
+            conn.commit()
+            fila.chegou(lead)
+            fila.assumir(lead)  # concorrente: fica pendente
+
+    processar(conn, evo, claude, CFG, _msg("oi", "WA-i4-a"), AGORA, RNG,
+              dormir=dormir_com_pendencia, fila=fila)
+    turnos = conn.execute(
+        "SELECT turnos FROM leads WHERE id = ?", (lead,)).fetchone()["turnos"]
+    assert turnos == 2
+
+
+def test_excecao_em_responder_nao_perde_a_pendencia(conn, lead):
+    """I5: uma exceção numa rodada não pode descartar a pendência que já
+    tinha se formado — a próxima volta do laço tem que consumi-la."""
+    transicionar(conn, lead, Status.CONTATADO, AGORA)
+    evo = EvoFalsa()
+    fila = FilaPorLead()
+
+    class ClaudeComFalhaNaPrimeira:
+        def __init__(self):
+            self.chamadas = 0
+            self.messages = SimpleNamespace(create=self._create)
+
+        def _create(self, **kw):
+            self.chamadas += 1
+            if self.chamadas == 1:
+                fila.assumir(lead)  # concorrente: fica pendente antes da falha
+                raise RuntimeError("timeout simulado do modelo")
+            return _resposta_final(_q())
+
+    claude = ClaudeComFalhaNaPrimeira()
+    processar(conn, evo, claude, CFG, _msg("oi", "WA-i5"), AGORA, RNG,
+              dormir=lambda s: None, fila=fila)
+    assert len(evo.enviados) == 1  # a rodada pendente respondeu mesmo assim
+    alerta = conn.execute(
+        "SELECT texto FROM eventos WHERE tipo = 'alerta' ORDER BY id DESC "
+        "LIMIT 1").fetchone()
+    assert "timeout simulado" in alerta["texto"]

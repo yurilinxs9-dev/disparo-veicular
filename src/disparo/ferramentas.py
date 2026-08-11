@@ -49,8 +49,10 @@ class Ferramentas:
         self.escalou = False
         self.fechou = False
         self.falhas_powercrm = 0
+        self.chamadas = 0  # conta toda execução, p/ detectar efeito colateral por tentativa
 
     def executar(self, nome: str, entrada: dict) -> str:
+        self.chamadas += 1
         if nome == "cotar":
             return self._cotar(entrada.get("placa", ""))
         if nome == "fechar_venda":
