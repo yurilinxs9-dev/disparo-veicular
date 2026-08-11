@@ -107,3 +107,13 @@ def test_fechar_venda_apos_escalar_nao_explode(conn, lead):
     assert saida.startswith("erro:")
     assert f.fechou is False
     assert status_de(conn, lead) == Status.ESCALADO
+
+
+def test_escalar_com_lead_ja_escalado_nao_explode(conn, lead):
+    _em_conversa(conn, lead)
+    f = Ferramentas(conn, PowerFalso(), lead, AGORA)
+    f.executar("escalar_humano", {"motivo": "pediu desconto"})
+    saida = f.executar("escalar_humano", {"motivo": "de novo"})
+    assert saida == "escalado"
+    assert f.escalou is True
+    assert status_de(conn, lead) == Status.ESCALADO

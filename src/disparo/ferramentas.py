@@ -29,7 +29,9 @@ FERRAMENTAS_SPEC = [
     {
         "name": "escalar_humano",
         "description": "Passa a conversa para a equipe humana. Use em recusa "
-                       "firme, pedido de desconto, ou assunto fora do escopo.",
+                       "firme, pedido de desconto, ou assunto fora do escopo. "
+                       "NÃO use quando o cliente demonstra dúvida ou interesse "
+                       "na proteção — isso você mesma explica e conduz.",
         "input_schema": {
             "type": "object",
             "properties": {"motivo": {"type": "string"}},
@@ -119,9 +121,10 @@ class Ferramentas:
                 "aqui na conversa em instantes")
 
     def _escalar(self, motivo: str) -> str:
-        transicionar(self._conn, self._lead, Status.ESCALADO, self._agora)
-        eventos.registrar(self._conn, "alerta",
-                          f"Escalado para humano: {motivo}",
-                          self._agora, self._lead)
+        if status_de(self._conn, self._lead) != Status.ESCALADO:
+            transicionar(self._conn, self._lead, Status.ESCALADO, self._agora)
+            eventos.registrar(self._conn, "alerta",
+                              f"Escalado para humano: {motivo}",
+                              self._agora, self._lead)
         self.escalou = True
         return "escalado"

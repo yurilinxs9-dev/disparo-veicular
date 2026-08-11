@@ -149,7 +149,7 @@ def test_texto_fora_do_esquema_vira_escalada():
     r = conversar(cliente, {"nome": "J", "veiculo": "Onix"},
                   [{"direcao": "entrada", "texto": "oi"}])
     assert r.decisao == "escalar"
-    assert r.resposta == ""
+    assert r.resposta != ""  # contrato novo: lead recebe cortesia, não silêncio
 
 
 def test_aberturas_tem_12_variacoes_unicas_com_nome():
@@ -163,3 +163,30 @@ def test_prompt_tem_regras_duras_e_anti_repeticao():
     assert "Nunca invente preço" in PROMPT
     assert "NUNCA repita" in PROMPT
     assert "não é roteiro fixo" in PROMPT
+
+
+def test_fallback_de_parse_ainda_responde_o_lead():
+    from types import SimpleNamespace
+    from disparo.conversador import conversar
+    cliente = SimpleNamespace(messages=SimpleNamespace(
+        create=lambda **kw: SimpleNamespace(content=[SimpleNamespace(
+            type="text", text="nao e json")])))
+    r = conversar(cliente, {"nome": "J", "veiculo": "Onix"},
+                  [{"direcao": "entrada", "texto": "oi"}])
+    assert r.decisao == "escalar"
+    assert r.resposta != ""  # lead nunca fica no vácuo
+
+
+def test_parse_tenta_do_ultimo_bloco_de_texto_para_tras():
+    from types import SimpleNamespace
+    from disparo.conversador import Qualificacao, conversar
+    q = Qualificacao(resposta="explico sim", decisao="continuar", resumo="r",
+                     paga_hoje=None)
+    cliente = SimpleNamespace(messages=SimpleNamespace(
+        create=lambda **kw: SimpleNamespace(content=[
+            SimpleNamespace(type="text", text="preambulo solto"),
+            SimpleNamespace(type="text", text=q.model_dump_json())])))
+    r = conversar(cliente, {"nome": "J", "veiculo": "Onix"},
+                  [{"direcao": "entrada", "texto": "como funciona?"}])
+    assert r.decisao == "continuar"
+    assert r.resposta == "explico sim"

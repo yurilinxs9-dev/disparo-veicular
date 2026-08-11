@@ -190,10 +190,18 @@ def conversar(cliente: Any, lead: dict, historico: list[dict],
             for u in usos
         ]})
 
-    texto = next((b.text for b in getattr(resposta, "content", [])
-                  if getattr(b, "type", "") == "text"), "")
-    try:
-        return Qualificacao.model_validate_json(texto)
-    except Exception:
-        return Qualificacao(resposta="", decisao="escalar",
-                            resumo="modelo não devolveu saída estruturada")
+    # A saída estruturada é o último bloco de texto; blocos anteriores podem
+    # ser preâmbulo solto de um turno com ferramenta.
+    textos = [b.text for b in getattr(resposta, "content", [])
+              if getattr(b, "type", "") == "text"]
+    for texto in reversed(textos):
+        try:
+            return Qualificacao.model_validate_json(texto)
+        except Exception:
+            continue
+    print(f"conversador: saida nao estruturada; blocos={textos!r}", flush=True)
+    return Qualificacao(
+        resposta="deixa eu te passar com alguém da equipe pra te ajudar "
+                 "melhor, só um instante",
+        decisao="escalar",
+        resumo="modelo não devolveu saída estruturada")
